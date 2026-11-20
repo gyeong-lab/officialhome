@@ -1226,3 +1226,146 @@ input[type="color"] {
   font-size: 0.92rem;
   color: var(--text);
 }
+
+/* Mobile 9:16 App Layout */
+html, body {
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 0 12px;
+  }
+  .main-content {
+    padding: 14px 0 36px;
+  }
+  .nav-inner {
+    padding-top: 8px;
+    padding-bottom: 8px;
+    gap: 8px;
+  }
+  .brand-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+  }
+  .brand-title {
+    font-size: 0.98rem;
+  }
+  .brand-sub {
+    font-size: 0.6rem;
+  }
+  .user-chip {
+    padding: 5px 9px;
+    font-size: 0.76rem;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nav-links {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-start;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 6px 2px 2px;
+    gap: 6px;
+  }
+  .nav-links::-webkit-scrollbar {
+    display: none;
+  }
+  .nav-btn {
+    flex-shrink: 0;
+    padding: 6px 11px;
+    font-size: 0.82rem;
+  }
+  .card {
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .home-attendance-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .home-live-badge,
+  .home-attendance-card {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .page-head h1 {
+    font-size: 1.28rem;
+  }
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .tab-pills {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .tab-pills::-webkit-scrollbar {
+    display: none;
+  }
+  .pill {
+    flex-shrink: 0;
+  }
+  .search-form {
+    width: 100%;
+  }
+  .search-form input {
+    min-width: 0;
+    flex: 1;
+  }
+  .list-item,
+  .post-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .cal-grid {
+    gap: 3px;
+  }
+  .cal-cell {
+    min-height: 54px;
+    padding: 4px;
+    border-radius: 8px;
+  }
+  .cal-day {
+    font-size: 0.72rem;
+  }
+  .cal-chip {
+    font-size: 0.62rem;
+    padding: 2px 4px;
+  }
+  .emoticon-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .modal-backdrop {
+    padding: 10px;
+    align-items: flex-end;
+  }
+  .modal {
+    width: 100%;
+    max-height: 88dvh;
+    overflow-y: auto;
+    padding: 16px;
+    border-radius: 18px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
