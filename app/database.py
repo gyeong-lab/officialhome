@@ -412,9 +412,9 @@ def init_db() -> None:
             conn.execute(
                 """
                 INSERT INTO users (username, nickname, password_hash, role, points, soop_id, soop_verified, created_at)
-                VALUES (?, ?, ?, 'admin', 5000, 'leeso0403', 1, ?)
+                VALUES (?, ?, ?, 'admin', 5000, NULL, 0, ?)
                 """,
-                ("admin", "체온(방송인)", hash_password("Admin!1234"), now),
+                ("1234gung", "조정간단발이", hash_password("Admin!1234"), now),
             )
             conn.execute(
                 """
@@ -482,6 +482,21 @@ def init_db() -> None:
                 (now,),
             )
         else:
+            # Replace legacy 'admin' (체온(방송인)) with '1234gung' as broadcaster/owner
+            legacy_admin = conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()
+            gung_user = conn.execute("SELECT id FROM users WHERE username = '1234gung'").fetchone()
+            if legacy_admin:
+                if not gung_user:
+                    conn.execute(
+                        "UPDATE users SET username = '1234gung', nickname = '조정간단발이', role = 'admin', soop_id = NULL, soop_verified = 0 WHERE id = ?",
+                        (legacy_admin["id"],),
+                    )
+                else:
+                    conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (gung_user["id"],))
+                    conn.execute("UPDATE posts SET author_id = ? WHERE author_id = ?", (gung_user["id"], legacy_admin["id"]))
+                    conn.execute("UPDATE predictions SET created_by = ? WHERE created_by = ?", (gung_user["id"], legacy_admin["id"]))
+                    conn.execute("DELETE FROM users WHERE id = ?", (legacy_admin["id"],))
+
             # Ensure manager account exists for existing databases
             has_manager = conn.execute("SELECT id FROM users WHERE username = 'manager'").fetchone()
             if not has_manager:
