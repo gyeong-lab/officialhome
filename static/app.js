@@ -41,6 +41,10 @@
       else if (k === "dataset") Object.assign(node.dataset, v);
       else if (k.startsWith("on") && typeof v === "function") {
         node.addEventListener(k.slice(2).toLowerCase(), v);
+      } else if (v === undefined || v === null || v === false) {
+        continue;
+      } else if (v === true) {
+        node.setAttribute(k, "");
       } else {
         node.setAttribute(k, v);
       }
@@ -777,39 +781,52 @@
       const cur = soopData.current_page || 1;
       const last = soopData.last_page || 1;
       if (last > 1) {
-        pagWrap.appendChild(
+        const goNoticePage = (nextPage) => {
+          state.noticePage = nextPage;
+          loadNotices();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        };
+        const btnRow = el("div", { className: "row-gap", style: "width:100%; justify-content:center" }, [
           el("button", {
+            type: "button",
             className: "btn btn-outline btn-sm",
             textContent: "◀ 이전",
-            disabled: cur <= 1 ? "true" : undefined,
+            disabled: cur <= 1,
             onClick: () => {
-              if (cur > 1) { state.noticePage = cur - 1; loadNotices(); }
+              if (cur > 1) goNoticePage(cur - 1);
             },
-          })
-        );
+          }),
+        ]);
         const startP = Math.max(1, cur - 2);
         const endP = Math.min(last, cur + 2);
         for (let pNum = startP; pNum <= endP; pNum++) {
-          pagWrap.appendChild(
+          btnRow.appendChild(
             el("button", {
+              type: "button",
               className: `btn btn-sm ${pNum === cur ? "btn-pink" : "btn-outline"}`,
               textContent: String(pNum),
-              onClick: () => { state.noticePage = pNum; loadNotices(); },
+              onClick: () => goNoticePage(pNum),
             })
           );
         }
-        pagWrap.appendChild(
+        btnRow.appendChild(
           el("button", {
+            type: "button",
             className: "btn btn-outline btn-sm",
             textContent: "다음 ▶",
-            disabled: cur >= last ? "true" : undefined,
+            disabled: cur >= last,
             onClick: () => {
-              if (cur < last) { state.noticePage = cur + 1; loadNotices(); }
+              if (cur < last) goNoticePage(cur + 1);
             },
           })
         );
+        pagWrap.appendChild(btnRow);
         pagWrap.appendChild(
-          el("span", { className: "muted small", textContent: `(${cur} / ${last}페이지 · 총 ${(soopData.total || 0).toLocaleString()}건)` })
+          el("div", {
+            className: "muted small",
+            style: "width:100%; text-align:center",
+            textContent: `${cur} / ${last}페이지 · 총 ${(soopData.total || 0).toLocaleString()}건`,
+          })
         );
       }
     } catch (err) {
