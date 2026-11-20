@@ -1228,6 +1228,36 @@ input[type="color"] {
 }
 
 /* Mobile 9:16 App Layout */
+.install-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: linear-gradient(135deg, #fff0f7 0%, #fce7f3 100%);
+  border: 1px solid var(--pink-200);
+  border-radius: 14px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.install-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.install-banner-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--pink-200);
+  flex-shrink: 0;
+}
+.install-banner-title {
+  font-size: 0.95rem;
+  color: var(--pink-700);
+}
+
 html, body {
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
@@ -1283,6 +1313,15 @@ html, body {
   .card {
     padding: 14px;
     border-radius: 14px;
+  }
+  .install-banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+  .install-banner .row-gap {
+    justify-content: flex-end;
   }
   .home-attendance-row {
     flex-direction: column;

@@ -308,11 +308,24 @@ class PredictionSettleBody(BaseModel):
 
 class GiftSendBody(BaseModel):
     recipient: str = Field(min_length=1, max_length=32)
-    gift_type: Literal["point", "item", "emoticon"]
+    gift_type: Literal["point", "item", "emoticon", "voucher"]
     amount: int | None = Field(default=None, ge=10, le=1000000)
     item_id: int | None = None
     emoticon_id: str | None = Field(default=None, max_length=20)
+    voucher_value: int | None = None
+    quantity: int = Field(default=1, ge=1, le=50)
     message: str = Field(default="", max_length=120)
+
+
+class AdminGrantVoucherBody(BaseModel):
+    recipient: str = Field(min_length=1, max_length=32)
+    point_value: Literal[1000, 5000, 10000]
+    quantity: int = Field(default=1, ge=1, le=100)
+    message: str = Field(default="", max_length=120)
+
+
+class OpenVoucherBody(BaseModel):
+    point_value: Literal[1000, 5000, 10000]
 
 
 # ---------------------------------------------------------------------------
@@ -2136,6 +2149,31 @@ def send_gift(body: GiftSendBody, session: dict = Depends(require_csrf)):
                 """,
                 (recipient["id"], item["id"], item["name"], cost, f"[{session['nickname']}님 선물] {msg}", now),
             )
+        elif body.gift_type == "voucher":
+            if body.voucher_value not in (1000, 5000, 10000):
+                raise HTTPException(status_code=400, detail="유효한 선물권 금액(1000/5000/10000)을 선택하세요.")
+            qty = int(body.quantity or 1)
+            owned_rows = conn.execute(
+                """
+                SELECT id FROM gift_vouchers
+                WHERE owner_id = ? AND point_value = ? AND status = 'owned'
+                ORDER BY id ASC LIMIT ?
+                """,
+                (session["id"], body.voucher_value, qty),
+            ).fetchall()
+            if len(owned_rows) < qty:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"보유한 +{body.voucher_value:,}P 선물권이 부족합니다. (보유: {len(owned_rows)}장)",
+                )
+            for vr in owned_rows:
+                conn.execute(
+                    "UPDATE gift_vouchers SET owner_id = ?, received_from = ? WHERE id = ?",
+                    (recipient["id"], session["id"], vr["id"]),
+                )
+            cost = 0
+            title = f"+{body.voucher_value:,}P 선물권 x{qty}장"
+            new_balance = session["points"]
         else:  # emoticon
             pack = next((e for e in GIFT_EMOTICON_PACKS if e["id"] == body.emoticon_id), None)
             if not pack:
@@ -2161,6 +2199,101 @@ def send_gift(body: GiftSendBody, session: dict = Depends(require_csrf)):
             (session["id"], recipient["id"], body.gift_type, title, cost, msg, now),
         )
         return {"balance": new_balance, "title": title, "recipient": recipient["nickname"]}
+
+
+@app.get("/api/vouchers/me")
+def get_my_vouchers(session: dict = Depends(require_user)):
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT v.id, v.point_value, v.created_at,
+                   u_from.nickname AS from_nickname
+            FROM gift_vouchers v
+            LEFT JOIN users u_from ON u_from.id = COALESCE(v.received_from, v.issued_by)
+            WHERE v.owner_id = ? AND v.status = 'owned'
+            ORDER BY v.point_value ASC, v.id ASC
+            """,
+            (session["id"],),
+        ).fetchall()
+        counts = {"1000": 0, "5000": 0, "10000": 0}
+        vouchers = []
+        for r in rows:
+            d = dict(r)
+            counts[str(d["point_value"])] = counts.get(str(d["point_value"]), 0) + 1
+            vouchers.append(d)
+        return {"counts": counts, "vouchers": vouchers}
+    finally:
+        conn.close()
+
+
+@app.post("/api/vouchers/open")
+def open_voucher(body: OpenVoucherBody, session: dict = Depends(require_csrf)):
+    now = utc_now_iso()
+    with transaction() as conn:
+        row = conn.execute(
+            """
+            SELECT id, point_value FROM gift_vouchers
+            WHERE owner_id = ? AND point_value = ? AND status = 'owned'
+            ORDER BY id ASC LIMIT 1
+            """,
+            (session["id"], body.point_value),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"보유한 +{body.point_value:,}P 선물권이 없습니다.")
+        cur = conn.execute(
+            "UPDATE gift_vouchers SET status = 'opened', opened_by = ?, opened_at = ? WHERE id = ? AND status = 'owned'",
+            (session["id"], now, row["id"]),
+        )
+        if cur.rowcount != 1:
+            raise HTTPException(status_code=409, detail="이미 사용된 선물권입니다.")
+        _, new_balance = apply_point_delta(
+            conn,
+            session["id"],
+            int(row["point_value"]),
+            f"포인트 선물권 열기 (+{int(row['point_value']):,}P)",
+            "voucher",
+            idempotency_key=f"voucher_open:{row['id']}",
+        )
+        return {"ok": True, "awarded": int(row["point_value"]), "balance": new_balance}
+
+
+@app.post("/api/admin/vouchers/grant")
+def admin_grant_vouchers(body: AdminGrantVoucherBody, admin: dict = Depends(require_admin)):
+    target_key = body.recipient.strip()
+    msg = clean_text(body.message, 120)
+    now = utc_now_iso()
+    with transaction() as conn:
+        recipient = conn.execute(
+            "SELECT id, username, nickname, is_blacklisted FROM users WHERE username = ? OR nickname = ?",
+            (target_key, target_key),
+        ).fetchone()
+        if not recipient:
+            raise HTTPException(status_code=404, detail="받는 회원을 찾을 수 없습니다.")
+        if recipient["is_blacklisted"]:
+            raise HTTPException(status_code=400, detail="영구정지된 회원에게는 지급할 수 없습니다.")
+        for _ in range(body.quantity):
+            conn.execute(
+                """
+                INSERT INTO gift_vouchers (owner_id, point_value, status, issued_by, created_at)
+                VALUES (?, ?, 'owned', ?, ?)
+                """,
+                (recipient["id"], body.point_value, admin["id"], now),
+            )
+        title = f"+{body.point_value:,}P 선물권 x{body.quantity}장 (관리자 지급)"
+        conn.execute(
+            """
+            INSERT INTO gifts (sender_id, recipient_id, gift_type, title, cost, message, created_at)
+            VALUES (?, ?, 'voucher', ?, 0, ?, ?)
+            """,
+            (admin["id"], recipient["id"], title, msg, now),
+        )
+        return {
+            "ok": True,
+            "recipient": recipient["nickname"],
+            "point_value": body.point_value,
+            "quantity": body.quantity,
+        }
 
 
 @app.get("/api/shop/items")

@@ -19,6 +19,7 @@ _TABLES_WITH_ID = {
     "predictions",
     "prediction_bets",
     "gifts",
+    "gift_vouchers",
     "emoticons",
 }
 
@@ -429,11 +430,24 @@ _PG_SCHEMA_STATEMENTS = [
         id SERIAL PRIMARY KEY,
         sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        gift_type TEXT NOT NULL CHECK(gift_type IN ('point', 'item', 'emoticon')),
+        gift_type TEXT NOT NULL CHECK(gift_type IN ('point', 'item', 'emoticon', 'voucher')),
         title TEXT NOT NULL,
         cost INTEGER NOT NULL DEFAULT 0,
         message TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS gift_vouchers (
+        id SERIAL PRIMARY KEY,
+        owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        point_value INTEGER NOT NULL CHECK(point_value IN (1000, 5000, 10000)),
+        status TEXT NOT NULL DEFAULT 'owned' CHECK(status IN ('owned', 'opened')),
+        issued_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        received_from INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        opened_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        opened_at TEXT
     )
     """,
     """
@@ -459,11 +473,54 @@ _PG_SCHEMA_STATEMENTS = [
 def _init_pg_schema(conn: Any) -> None:
     for stmt in _PG_SCHEMA_STATEMENTS:
         conn.execute(stmt)
+    conn.execute("ALTER TABLE gifts DROP CONSTRAINT IF EXISTS gifts_gift_type_check")
+    conn.execute(
+        "ALTER TABLE gifts ADD CONSTRAINT gifts_gift_type_check CHECK (gift_type IN ('point', 'item', 'emoticon', 'voucher'))"
+    )
+
+
+def _migrate_gifts_type_check_if_needed() -> None:
+    """Recreate gifts table if its CHECK constraint does not yet allow 'voucher'."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='gifts'"
+        ).fetchone()
+        if not row or "'voucher'" in (row["sql"] or ""):
+            return
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("BEGIN IMMEDIATE")
+        conn.executescript(
+            """
+            CREATE TABLE gifts_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                gift_type TEXT NOT NULL CHECK(gift_type IN ('point', 'item', 'emoticon', 'voucher')),
+                title TEXT NOT NULL,
+                cost INTEGER NOT NULL DEFAULT 0,
+                message TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO gifts_new (id, sender_id, recipient_id, gift_type, title, cost, message, created_at)
+            SELECT id, sender_id, recipient_id, gift_type, title, cost, message, created_at FROM gifts;
+            DROP TABLE gifts;
+            ALTER TABLE gifts_new RENAME TO gifts;
+            """
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.close()
 
 
 def init_db() -> None:
     if not _is_postgres():
         _migrate_posts_tab_check_if_needed()
+        _migrate_gifts_type_check_if_needed()
     with transaction() as conn:
         if _is_postgres():
             _init_pg_schema(conn)
@@ -627,11 +684,23 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                gift_type TEXT NOT NULL CHECK(gift_type IN ('point', 'item', 'emoticon')),
+                gift_type TEXT NOT NULL CHECK(gift_type IN ('point', 'item', 'emoticon', 'voucher')),
                 title TEXT NOT NULL,
                 cost INTEGER NOT NULL DEFAULT 0,
                 message TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS gift_vouchers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                point_value INTEGER NOT NULL CHECK(point_value IN (1000, 5000, 10000)),
+                status TEXT NOT NULL DEFAULT 'owned' CHECK(status IN ('owned', 'opened')),
+                issued_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                received_from INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                opened_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL,
+                opened_at TEXT
             );
 
             CREATE TABLE IF NOT EXISTS emoticons (

@@ -11,7 +11,7 @@
   <link rel="icon" type="image/jpeg" href="/static/images/logo.jpg?v=20261120b" />
   <link rel="apple-touch-icon" href="/static/images/logo.jpg?v=20261120b" />
   <link rel="manifest" href="/static/manifest.webmanifest" />
-  <link rel="stylesheet" href="/static/styles.css?v=20261120f" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261120g" />
 </head>
 <body>
   <header class="navbar">
@@ -44,6 +44,19 @@
   </header>
 
   <main class="container main-content">
+    <div id="install-banner" class="install-banner hidden">
+      <div class="install-banner-left">
+        <img src="/static/images/logo.jpg?v=20261120b" alt="앱 아이콘" class="install-banner-icon" />
+        <div>
+          <strong class="install-banner-title">체온 공홈 앱으로 설치하기</strong>
+          <div class="muted small">홈 화면에 추가하면 앱처럼 빠르고 편하게 이용할 수 있어요.</div>
+        </div>
+      </div>
+      <div class="row-gap">
+        <button type="button" class="btn btn-pink btn-sm" id="install-app-btn">앱 설치</button>
+        <button type="button" class="icon-btn" id="install-dismiss-btn" title="닫기">✕</button>
+      </div>
+    </div>
     <div id="toast" class="toast hidden"></div>
 
     <!-- HOME PAGE -->
@@ -372,6 +385,7 @@
           <h2>💝 선물 보내기</h2>
           <div class="tab-pills mt-12" id="gift-type-tabs">
             <button type="button" class="pill active" data-gtype="point">💰 포인트</button>
+            <button type="button" class="pill" data-gtype="voucher">🎟️ 선물권</button>
             <button type="button" class="pill" data-gtype="item">🛍️ 아이템</button>
             <button type="button" class="pill" data-gtype="emoticon">😊 이모티콘</button>
           </div>
@@ -399,6 +413,22 @@
               </label>
             </div>
 
+            <div id="gift-field-voucher" class="hidden">
+              <div class="grid-2">
+                <label>선물권 종류
+                  <select id="gift-voucher-value">
+                    <option value="1000">+1,000P 선물권</option>
+                    <option value="5000">+5,000P 선물권</option>
+                    <option value="10000">+10,000P 선물권</option>
+                  </select>
+                </label>
+                <label>보낼 장수
+                  <input type="number" id="gift-voucher-qty" min="1" max="50" value="1" />
+                </label>
+              </div>
+              <div class="muted small mt-12" id="gift-voucher-owned-hint">내 보유: +1,000P 0장 · +5,000P 0장 · +10,000P 0장</div>
+            </div>
+
             <label>선물 메시지 (선택)
               <input type="text" id="gift-message" placeholder="응원이나 축하 메시지를 남겨보세요!" maxlength="120" />
             </label>
@@ -408,6 +438,38 @@
         </div>
 
         <div class="list-stack">
+          <div class="card" id="my-vouchers-card">
+            <h3>🎟️ 내가 보유한 포인트 선물권</h3>
+            <p class="muted small">선물권을 열면 즉시 내 포인트로 적립되며, 다른 회원에게 선물할 수도 있습니다.</p>
+            <div id="my-vouchers-list" class="list-stack mt-12"></div>
+          </div>
+
+          <div class="card hidden" id="gift-admin-voucher-card">
+            <h3>👑 관리자 선물권 지급</h3>
+            <p class="muted small">특정 회원에게 +1,000P / +5,000P / +10,000P 선물권을 여러 장 지급합니다.</p>
+            <form id="admin-voucher-grant-form" class="form-stack mt-12">
+              <label>받는 사람 (아이디 또는 닉네임)
+                <input type="text" id="adm-voucher-recipient" placeholder="예: pinkfan 또는 닉네임" required maxlength="32" />
+              </label>
+              <div class="grid-2">
+                <label>선물권 종류
+                  <select id="adm-voucher-value">
+                    <option value="1000">+1,000P 선물권</option>
+                    <option value="5000">+5,000P 선물권</option>
+                    <option value="10000">+10,000P 선물권</option>
+                  </select>
+                </label>
+                <label>지급 장수 (1~100장)
+                  <input type="number" id="adm-voucher-qty" min="1" max="100" value="1" required />
+                </label>
+              </div>
+              <label>지급 메시지 (선택)
+                <input type="text" id="adm-voucher-msg" placeholder="예: 이벤트 당첨 축하합니다!" maxlength="120" />
+              </label>
+              <button type="submit" class="btn btn-pink btn-sm">🎟️ 선물권 지급하기</button>
+            </form>
+          </div>
+
           <div class="card">
             <h3>💌 받은 선물함</h3>
             <div id="gift-received-list" class="list-stack mt-12"></div>
@@ -613,6 +675,6 @@
   </div>
 
   <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
-  <script src="/static/app.js?v=20261120r"></script>
+  <script src="/static/app.js?v=20261120s"></script>
 </body>
 </html>

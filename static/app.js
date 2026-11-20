@@ -2192,16 +2192,65 @@
 
     const recWrap = document.getElementById("gift-received-list");
     const sentWrap = document.getElementById("gift-sent-list");
+    const voucherWrap = document.getElementById("my-vouchers-list");
+    const voucherHint = document.getElementById("gift-voucher-owned-hint");
+    const adminVoucherCard = document.getElementById("gift-admin-voucher-card");
     clear(recWrap);
     clear(sentWrap);
+    if (voucherWrap) clear(voucherWrap);
+    if (adminVoucherCard) adminVoucherCard.classList.toggle("hidden", !isStaffOrAdmin());
 
     if (!state.user) {
       recWrap.appendChild(el("p", { className: "muted", textContent: "로그인 후 확인할 수 있습니다." }));
       sentWrap.appendChild(el("p", { className: "muted", textContent: "로그인 후 확인할 수 있습니다." }));
+      if (voucherWrap) voucherWrap.appendChild(el("p", { className: "muted", textContent: "로그인 후 확인할 수 있습니다." }));
+      if (voucherHint) voucherHint.textContent = "로그인 후 보유 장수를 확인할 수 있습니다.";
       return;
     }
 
-    const myGifts = await api("/api/gifts/me");
+    const [myGifts, myVouchers] = await Promise.all([api("/api/gifts/me"), api("/api/vouchers/me")]);
+    const vCounts = myVouchers.counts || { "1000": 0, "5000": 0, "10000": 0 };
+    if (voucherHint) {
+      voucherHint.textContent = `내 보유: +1,000P ${vCounts["1000"] || 0}장 · +5,000P ${vCounts["5000"] || 0}장 · +10,000P ${vCounts["10000"] || 0}장`;
+    }
+    if (voucherWrap) {
+      const tiers = [1000, 5000, 10000];
+      const totalV = tiers.reduce((acc, v) => acc + (vCounts[String(v)] || 0), 0);
+      if (totalV === 0) {
+        voucherWrap.appendChild(el("p", { className: "muted small", textContent: "보유 중인 선물권이 없습니다." }));
+      } else {
+        tiers.forEach((val) => {
+          const cnt = vCounts[String(val)] || 0;
+          if (!cnt) return;
+          voucherWrap.appendChild(
+            el("div", { className: "list-item" }, [
+              el("div", {}, [
+                el("strong", { textContent: `🎟️ +${val.toLocaleString()}P 선물권` }),
+                el("div", { className: "muted small", textContent: `현재 ${cnt}장 보유 중` }),
+              ]),
+              el("button", {
+                type: "button",
+                className: "btn btn-pink btn-sm",
+                textContent: `선물권 열기 (+${val.toLocaleString()}P)`,
+                onClick: async () => {
+                  try {
+                    const res = await api("/api/vouchers/open", {
+                      method: "POST",
+                      body: { point_value: val },
+                    });
+                    showToast(`🎉 선물권을 열어 +${res.awarded.toLocaleString()}P를 받았습니다!`);
+                    await refreshMe();
+                    loadGiftPage();
+                  } catch (err) {
+                    showToast(err.message);
+                  }
+                },
+              }),
+            ])
+          );
+        });
+      }
+    }
     if (!(myGifts.received || []).length) {
       recWrap.appendChild(el("p", { className: "muted small", textContent: "받은 선물이 없습니다." }));
     } else {
@@ -2228,7 +2277,7 @@
               el("strong", { textContent: `${g.title}` }),
               el("div", { className: "muted small", textContent: `받는이: ${g.recipient_nickname}${g.message ? ` · "${g.message}"` : ""}` }),
             ]),
-            el("span", { className: "badge-pink", textContent: `-${g.cost.toLocaleString()}P` }),
+            el("span", { className: "badge-pink", textContent: g.cost > 0 ? `-${g.cost.toLocaleString()}P` : "선물권" }),
           ])
         );
       });
@@ -2707,6 +2756,7 @@
         pill.classList.add("active");
         currentGiftType = pill.dataset.gtype;
         document.getElementById("gift-field-point").classList.toggle("hidden", currentGiftType !== "point");
+        document.getElementById("gift-field-voucher").classList.toggle("hidden", currentGiftType !== "voucher");
         document.getElementById("gift-field-item").classList.toggle("hidden", currentGiftType !== "item");
         document.getElementById("gift-field-emoticon").classList.toggle("hidden", currentGiftType !== "emoticon");
       });
@@ -2722,6 +2772,10 @@
           message: document.getElementById("gift-message").value,
         };
         if (currentGiftType === "point") payload.amount = Number(document.getElementById("gift-amount").value);
+        else if (currentGiftType === "voucher") {
+          payload.voucher_value = Number(document.getElementById("gift-voucher-value").value);
+          payload.quantity = Number(document.getElementById("gift-voucher-qty").value || 1);
+        }
         else if (currentGiftType === "item") payload.item_id = Number(document.getElementById("gift-item-select").value) || null;
         else if (currentGiftType === "emoticon") payload.emoticon_id = document.getElementById("gift-emoticon-select").value;
 
@@ -2729,6 +2783,27 @@
         showToast(`${res.recipient}님께 '${res.title}' 선물을 보냈습니다!`);
         e.target.reset();
         await refreshMe();
+        loadGiftPage();
+      } catch (err) {
+        showToast(err.message);
+      }
+    });
+
+    document.getElementById("admin-voucher-grant-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const res = await api("/api/admin/vouchers/grant", {
+          method: "POST",
+          body: {
+            recipient: document.getElementById("adm-voucher-recipient").value,
+            point_value: Number(document.getElementById("adm-voucher-value").value),
+            quantity: Number(document.getElementById("adm-voucher-qty").value || 1),
+            message: document.getElementById("adm-voucher-msg").value,
+          },
+        });
+        showToast(`${res.recipient}님께 +${res.point_value.toLocaleString()}P 선물권 ${res.quantity}장을 지급했습니다!`);
+        e.target.reset();
+        document.getElementById("adm-voucher-qty").value = "1";
         loadGiftPage();
       } catch (err) {
         showToast(err.message);
@@ -2861,16 +2936,65 @@
 
     const recWrap = document.getElementById("gift-received-list");
     const sentWrap = document.getElementById("gift-sent-list");
+    const voucherWrap = document.getElementById("my-vouchers-list");
+    const voucherHint = document.getElementById("gift-voucher-owned-hint");
+    const adminVoucherCard = document.getElementById("gift-admin-voucher-card");
     clear(recWrap);
     clear(sentWrap);
+    if (voucherWrap) clear(voucherWrap);
+    if (adminVoucherCard) adminVoucherCard.classList.toggle("hidden", !isStaffOrAdmin());
 
     if (!state.user) {
       recWrap.appendChild(el("p", { className: "muted", textContent: "로그인 후 확인할 수 있습니다." }));
       sentWrap.appendChild(el("p", { className: "muted", textContent: "로그인 후 확인할 수 있습니다." }));
+      if (voucherWrap) voucherWrap.appendChild(el("p", { className: "muted", textContent: "로그인 후 확인할 수 있습니다." }));
+      if (voucherHint) voucherHint.textContent = "로그인 후 보유 장수를 확인할 수 있습니다.";
       return;
     }
 
-    const myGifts = await api("/api/gifts/me");
+    const [myGifts, myVouchers] = await Promise.all([api("/api/gifts/me"), api("/api/vouchers/me")]);
+    const vCounts = myVouchers.counts || { "1000": 0, "5000": 0, "10000": 0 };
+    if (voucherHint) {
+      voucherHint.textContent = `내 보유: +1,000P ${vCounts["1000"] || 0}장 · +5,000P ${vCounts["5000"] || 0}장 · +10,000P ${vCounts["10000"] || 0}장`;
+    }
+    if (voucherWrap) {
+      const tiers = [1000, 5000, 10000];
+      const totalV = tiers.reduce((acc, v) => acc + (vCounts[String(v)] || 0), 0);
+      if (totalV === 0) {
+        voucherWrap.appendChild(el("p", { className: "muted small", textContent: "보유 중인 선물권이 없습니다." }));
+      } else {
+        tiers.forEach((val) => {
+          const cnt = vCounts[String(val)] || 0;
+          if (!cnt) return;
+          voucherWrap.appendChild(
+            el("div", { className: "list-item" }, [
+              el("div", {}, [
+                el("strong", { textContent: `🎟️ +${val.toLocaleString()}P 선물권` }),
+                el("div", { className: "muted small", textContent: `현재 ${cnt}장 보유 중` }),
+              ]),
+              el("button", {
+                type: "button",
+                className: "btn btn-pink btn-sm",
+                textContent: `선물권 열기 (+${val.toLocaleString()}P)`,
+                onClick: async () => {
+                  try {
+                    const res = await api("/api/vouchers/open", {
+                      method: "POST",
+                      body: { point_value: val },
+                    });
+                    showToast(`🎉 선물권을 열어 +${res.awarded.toLocaleString()}P를 받았습니다!`);
+                    await refreshMe();
+                    loadGiftPage();
+                  } catch (err) {
+                    showToast(err.message);
+                  }
+                },
+              }),
+            ])
+          );
+        });
+      }
+    }
     if (!(myGifts.received || []).length) {
       recWrap.appendChild(el("p", { className: "muted small", textContent: "받은 선물이 없습니다." }));
     } else {
@@ -2897,7 +3021,7 @@
               el("strong", { textContent: `${g.title}` }),
               el("div", { className: "muted small", textContent: `받는이: ${g.recipient_nickname}${g.message ? ` · "${g.message}"` : ""}` }),
             ]),
-            el("span", { className: "badge-pink", textContent: `-${g.cost.toLocaleString()}P` }),
+            el("span", { className: "badge-pink", textContent: g.cost > 0 ? `-${g.cost.toLocaleString()}P` : "선물권" }),
           ])
         );
       });
@@ -3353,7 +3477,58 @@
     }
   }
 
+  function initInstallBanner() {
+    const banner = document.getElementById("install-banner");
+    const installBtn = document.getElementById("install-app-btn");
+    const dismissBtn = document.getElementById("install-dismiss-btn");
+    if (!banner || !installBtn || !dismissBtn) return;
+
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    const dismissed = localStorage.getItem("chaeon_install_dismissed_v1") === "1";
+    if (!isStandalone && !dismissed) {
+      banner.classList.remove("hidden");
+    }
+
+    let deferredPrompt = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+    });
+
+    installBtn.addEventListener("click", async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        if (choice && choice.outcome === "accepted") {
+          banner.classList.add("hidden");
+          localStorage.setItem("chaeon_install_dismissed_v1", "1");
+        }
+        return;
+      }
+      const guide = el("div", { className: "form-stack" }, [
+        el("p", { textContent: "브라우저 메뉴에서 홈 화면에 추가하면 앱처럼 바로 실행할 수 있습니다." }),
+        el("div", { className: "info-box small" }, [
+          el("div", { textContent: "📱 Android (Chrome): 우측 상단 ⋮ 메뉴 → '앱 설치' 또는 '홈 화면에 추가'" }),
+          el("div", { className: "mt-12", textContent: "🍎 iPhone (Safari): 하단 공유 버튼(⬆️) → '홈 화면에 추가'" }),
+          el("div", { className: "mt-12", textContent: "💻 PC (Chrome / Edge): 주소창 오른쪽 '앱 설치(⊕)' 아이콘 클릭" }),
+        ]),
+        el("div", { className: "modal-footer-end" }, [
+          el("button", { type: "button", className: "btn btn-pink btn-sm", textContent: "확인", onClick: closeModal }),
+        ]),
+      ]);
+      openModal("📱 체온 공홈 앱 설치 방법", guide);
+    });
+
+    dismissBtn.addEventListener("click", () => {
+      banner.classList.add("hidden");
+      localStorage.setItem("chaeon_install_dismissed_v1", "1");
+    });
+  }
+
   async function init() {
+    initInstallBanner();
     bindEvents();
     window.addEventListener("popstate", () => {
       syncFromLocation();
