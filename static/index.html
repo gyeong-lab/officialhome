@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>체온 공홈</title>
+  <link rel="icon" type="image/jpeg" href="/static/images/logo.jpg" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261120e" />
+</head>
+<body>
+  <header class="navbar">
+    <div class="container nav-inner">
+      <div class="brand" id="brand-home">
+        <img src="/static/images/logo.jpg" alt="체온 공홈 아이콘" class="brand-logo" />
+        <div>
+          <div class="brand-title">체온 공홈</div>
+          <div class="brand-sub">CHAEON OFFICIAL HOME</div>
+        </div>
+      </div>
+
+      <nav class="nav-links" id="nav-links">
+        <button class="nav-btn active" data-page="home">홈</button>
+        <button class="nav-btn" data-page="notice">공지사항</button>
+        <button class="nav-btn" data-page="board">게시판</button>
+        <button class="nav-btn" data-page="signatures">시그니처</button>
+        <button class="nav-btn" data-page="emoticons">이모티콘</button>
+        <button class="nav-btn" data-page="calendar">캘린더</button>
+        <button class="nav-btn" data-page="points">포인트 · SOOP연동</button>
+        <button class="nav-btn" data-page="gift">선물하기</button>
+        <button class="nav-btn hidden" id="nav-admin-btn" data-page="admin">관리자</button>
+      </nav>
+
+      <div class="auth-area" id="auth-area">
+        <button class="btn btn-outline btn-sm" id="open-login-btn">로그인</button>
+        <button class="btn btn-pink btn-sm" id="open-register-btn">회원가입</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- HOME PAGE -->
+    <section id="page-home" class="page active">
+      <div class="home-banner-wrap">
+        <img src="/static/images/banner.jpg" alt="체온 공식 배너" class="home-banner-img" />
+      </div>
+
+      <div class="home-attendance-row">
+        <a id="home-live-link" class="home-live-badge" href="https://www.sooplive.com/station/leeso0403" target="_blank" rel="noopener noreferrer">
+          <span class="live-dot"></span>
+          <span id="home-live-text">방송 상태 확인 중...</span>
+        </a>
+        <div class="home-attendance-card" id="home-user-box">
+          <div class="ha-info">
+            <span class="ha-label">내 보유 포인트</span>
+            <strong class="ha-points" id="home-points">- P</strong>
+            <span class="muted small" id="home-soop-status">로그인 후 출석/연동 가능</span>
+          </div>
+          <button class="btn btn-pink btn-sm" id="home-attendance-btn">오늘 출석체크 (+100P)</button>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h2>📢 공지사항</h2>
+            <button class="link-btn" data-goto="notice">전체보기 →</button>
+          </div>
+          <div id="home-notices" class="list-stack"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h2>📅 방송일정 (캘린더)</h2>
+            <button class="link-btn" data-goto="calendar">캘린더 →</button>
+          </div>
+          <div id="home-events" class="list-stack"></div>
+        </div>
+      </div>
+
+      <div class="card mt-16">
+        <div class="card-header">
+          <h2>🎬 최신 다시보기 (VOD)</h2>
+          <a href="https://www.sooplive.com/station/leeso0403/vod" target="_blank" rel="noopener noreferrer" class="link-btn">SOOP 다시보기 전체보기 ↗</a>
+        </div>
+        <div id="home-vods" class="vod-grid"></div>
+      </div>
+    </section>
+
+    <!-- NOTICE PAGE -->
+    <section id="page-notice" class="page">
+      <div class="page-head">
+        <div>
+          <h1>📢 공지사항</h1>
+          <p class="muted">체온 공홈 공식 공지 및 SOOP 방송국 공지사항입니다.</p>
+        </div>
+        <div class="row-gap">
+          <form id="notice-search-form" class="search-form">
+            <input type="text" id="notice-search-input" placeholder="공지 제목/내용 검색..." maxlength="40" />
+            <button type="submit" class="btn btn-outline btn-sm">검색</button>
+          </form>
+          <a href="https://www.sooplive.com/station/leeso0403/board/117677437" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">SOOP 공지 ↗</a>
+          <button class="btn btn-pink btn-sm hidden" id="notice-write-btn">공지 작성</button>
+        </div>
+      </div>
+
+      <div class="tab-pills" id="notice-subtabs" style="margin-bottom:14px">
+        <button class="pill active" data-ntab="soop">🔴 SOOP 방송 공지</button>
+        <button class="pill" data-ntab="site">📌 공홈 공지</button>
+      </div>
+
+      <div class="card" style="padding:0; overflow:hidden">
+        <div class="notice-table-head">
+          <div class="nt-col-badge">구분</div>
+          <div class="nt-col-title">제목</div>
+          <div class="nt-col-author">작성자</div>
+          <div class="nt-col-date">작성일</div>
+          <div class="nt-col-views">조회</div>
+        </div>
+        <div id="site-notice-list" class="notice-table-body hidden"></div>
+        <div id="notice-list" class="notice-table-body"></div>
+      </div>
+      <div id="notice-pagination" class="row-gap mt-16" style="justify-content:center"></div>
+    </section>
+
+    <!-- BOARD PAGE -->
+    <section id="page-board" class="page">
+      <div class="page-head">
+        <div>
+          <h1>💬 팬 커뮤니티 게시판</h1>
+          <p class="muted">자유로운 소통, 팬아트, 클립을 공유해 보세요. (글 작성 시 +50P)</p>
+        </div>
+        <button class="btn btn-pink" id="board-write-btn">글쓰기</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="tab-pills" id="board-tabs">
+          <button class="pill active" data-tab="all">전체</button>
+          <button class="pill" data-tab="free">자유게시판</button>
+          <button class="pill" data-tab="fanart">팬아트</button>
+          <button class="pill" data-tab="clip">레전드 클립</button>
+          <button class="pill" data-tab="qna">질문/건의</button>
+          <button class="pill" data-tab="emoticon">😊 이모티콘</button>
+        </div>
+        <div class="row-gap">
+          <select id="board-sort-select" style="width:130px; flex-shrink:0">
+            <option value="latest">최신순</option>
+            <option value="popular">인기순</option>
+          </select>
+          <form id="board-search-form" class="search-form">
+            <input type="text" id="board-search-input" placeholder="제목/내용 검색..." maxlength="40" />
+            <button type="submit" class="btn btn-outline btn-sm">검색</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div id="board-list" class="post-list"></div>
+      </div>
+    </section>
+
+    <!-- SIGNATURES PAGE -->
+    <section id="page-signatures" class="page">
+      <div class="home-banner-wrap">
+        <img src="/static/images/sig_banner.jpg" alt="체온 시그목록 배너" class="home-banner-img" />
+      </div>
+
+      <div class="page-head">
+        <div>
+          <h1>✨ 시그니처</h1>
+        </div>
+        <button class="btn btn-pink btn-sm hidden" id="sig-add-btn">+ 시그니처 추가</button>
+      </div>
+
+      <div class="card sig-filter-card">
+        <div class="tab-pills" id="sig-categories">
+          <button class="pill active" data-cat="all">전체</button>
+          <button class="pill" data-cat="hot">열혈</button>
+          <button class="pill" data-cat="new">NEW</button>
+        </div>
+
+        <div class="sig-search-row mt-12">
+          <input type="text" id="sig-search-input" placeholder="🔍 시그니처 이름 또는 풍선 개수 검색..." maxlength="40" />
+          <select id="sig-sort-select" style="width:160px; flex-shrink:0">
+            <option value="asc">오름차순</option>
+            <option value="desc">내림차순</option>
+            <option value="korean">ㄱㄴㄷ순</option>
+          </select>
+        </div>
+        <div id="sig-range-desc" class="muted small mt-12"></div>
+      </div>
+
+      <div id="signatures-grid" class="sig-grid mt-16"></div>
+    </section>
+
+    <!-- EMOTICONS PAGE -->
+    <section id="page-emoticons" class="page">
+      <div class="page-head">
+        <div>
+          <h1>😊 체온 공홈 이모티콘</h1>
+          <p class="muted">등록된 이모티콘을 공홈에서 사용할 수 있습니다.</p>
+        </div>
+      </div>
+
+      <div class="card hidden" id="emoticon-admin-card">
+        <h3>➕ 새 이모티콘 등록 (관리자 전용)</h3>
+        <form id="emoticon-create-form" class="form-stack mt-12">
+          <div class="grid-2">
+            <label>이모티콘 이름
+              <input type="text" id="emo-name" placeholder="예: 체온하트" required maxlength="40" />
+            </label>
+            <label>이모지/텍스트 (이미지 없을 때)
+              <input type="text" id="emo-glyph" placeholder="예: 💖" maxlength="16" />
+            </label>
+          </div>
+          <label>이모티콘 이미지 파일 (PNG / JPG / GIF / WEBP, 선택)
+            <input type="file" id="emo-file" accept=".png,.jpg,.jpeg,.gif,.webp" />
+          </label>
+          <div class="row-gap">
+            <button type="submit" class="btn btn-pink">이모티콘 등록</button>
+            <span class="muted small">등록 즉시 공홈 글쓰기·댓글 이모티콘 선택기에 반영됩니다.</span>
+          </div>
+        </form>
+      </div>
+
+      <div class="card mt-16">
+        <div class="card-header">
+          <h2>등록된 공홈 이모티콘</h2>
+          <span class="muted small" id="emoticon-count-label">0개</span>
+        </div>
+        <div id="emoticons-grid" class="emoticon-grid mt-12"></div>
+      </div>
+    </section>
+
+    <!-- CALENDAR PAGE -->
+    <section id="page-calendar" class="page">
+      <div class="page-head">
+        <div>
+          <h1>📅 방송 캘린더</h1>
+          <p class="muted">월간 정규 방송 및 합방·이벤트 일정을 확인하세요.</p>
+        </div>
+        <div class="row-gap">
+          <div class="month-nav">
+            <button class="btn btn-outline btn-sm" id="cal-prev">◀ 이전 달</button>
+            <strong id="cal-month-label">2026-11</strong>
+            <button class="btn btn-outline btn-sm" id="cal-next">다음 달 ▶</button>
+          </div>
+          <button class="btn btn-pink btn-sm hidden" id="cal-add-btn">+ 일정 추가</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="cal-weekdays">
+          <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+        </div>
+        <div id="cal-grid" class="cal-grid"></div>
+      </div>
+      <div class="card mt-16">
+        <h3>이번 달 일정 상세</h3>
+        <div id="cal-event-list" class="list-stack mt-12"></div>
+      </div>
+    </section>
+
+    <!-- POINTS & SOOP LINK PAGE -->
+    <section id="page-points" class="page">
+      <div class="page-head">
+        <div>
+          <h1>🎁 포인트 시스템 & SOOP 계정 연동</h1>
+          <p class="muted">사이트 자체 로그인 후 SOOP 아이디를 인증하면 채팅 참여로 포인트를 적립할 수 있습니다.</p>
+        </div>
+        <button class="btn btn-pink" id="points-attendance-btn">일일 출석체크 (+100P)</button>
+      </div>
+
+      <div class="tab-pills mb-16" id="points-subtabs" style="margin-bottom:16px">
+        <button class="pill active" data-ptab="overview">🔗 SOOP 연동 & 포인트</button>
+        <button class="pill" data-ptab="predictions">🎯 승부예측</button>
+        <button class="pill" data-ptab="shop">🛍️ 포인트 상점</button>
+      </div>
+
+      <div id="ptab-overview" class="ptab-panel">
+        <div class="grid-2">
+        <!-- SOOP Link Card -->
+        <div class="card">
+          <h2>🔗 내 SOOP 계정 연동 (인증 코드 방식)</h2>
+          <p class="muted small">남의 아이디 도용을 막기 위해 1회용 인증 코드를 채팅으로 확인합니다.</p>
+          <div id="soop-link-status-box" class="info-box mt-12"></div>
+
+          <form id="soop-link-form" class="form-stack mt-12">
+            <label>연동할 SOOP 아이디
+              <input type="text" id="soop-id-input" placeholder="예: fan_test01" maxlength="30" required />
+            </label>
+            <div class="row-gap">
+              <button type="submit" class="btn btn-pink btn-sm">인증 코드 발급</button>
+              <button type="button" class="btn btn-outline btn-sm hidden" id="soop-unlink-btn">연동 해제</button>
+            </div>
+          </form>
+
+          <div id="soop-pending-box" class="alert-pink hidden mt-12"></div>
+        </div>
+
+        <!-- SOOP Real-Time Chat Collector Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2>💬 SOOP 실시간 채팅 자동 연동</h2>
+            <button type="button" class="btn btn-outline btn-sm" id="collector-refresh-btn">새로고침</button>
+          </div>
+          <p class="muted small">
+            체온(<code>leeso0403</code>) 생방송 중 SOOP 채팅방에 자동 접속해 연동된 회원의 채팅을 감지하고 <strong>+5P</strong>를 자동 적립합니다. (일일 최대 500P)
+          </p>
+          <div id="collector-status-box" class="info-box mt-12">상태 확인 중...</div>
+          <div id="collector-logs" class="list-stack mt-12"></div>
+        </div>
+      </div>
+
+      <div class="card mt-16">
+        <h3>📜 내 포인트 원장 (적립/사용 내역)</h3>
+        <div id="ledger-list" class="list-stack mt-12"></div>
+      </div>
+      </div>
+
+      <!-- Predictions Sub-Tab -->
+      <div id="ptab-predictions" class="ptab-panel hidden">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2>🎯 포인트 승부예측</h2>
+              <p class="muted small">보유 포인트로 결과를 예측하고 적중 시 배당 포인트를 획득하세요!</p>
+            </div>
+            <button class="btn btn-pink btn-sm hidden" id="pred-add-btn">+ 승부예측 만들기</button>
+          </div>
+          <div id="predictions-list" class="list-stack mt-12"></div>
+        </div>
+      </div>
+
+      <!-- Point Shop Sub-Tab -->
+      <div id="ptab-shop" class="ptab-panel hidden">
+        <div class="card">
+          <div class="card-header">
+            <h2>🛍️ 포인트 상점</h2>
+            <div class="row-gap">
+              <span class="badge-pink" id="shop-my-points">보유: - P</span>
+              <button class="btn btn-pink btn-sm hidden" id="shop-add-btn">+ 상품 추가</button>
+            </div>
+          </div>
+          <div id="shop-grid" class="shop-grid mt-12"></div>
+        </div>
+
+        <div class="card mt-16">
+          <h3>📦 내 상점 교환 신청 내역</h3>
+          <div id="my-redemptions-list" class="list-stack mt-12"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GIFT PAGE -->
+    <section id="page-gift" class="page">
+      <div class="page-head">
+        <div>
+          <h1>🎁 선물하기</h1>
+          <p class="muted">다른 회원이나 방송인에게 포인트, 상점 아이템, 이모티콘을 선물해 보세요.</p>
+        </div>
+        <span class="badge-pink" id="gift-my-points">보유: - P</span>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h2>💝 선물 보내기</h2>
+          <div class="tab-pills mt-12" id="gift-type-tabs">
+            <button type="button" class="pill active" data-gtype="point">💰 포인트</button>
+            <button type="button" class="pill" data-gtype="item">🛍️ 아이템</button>
+            <button type="button" class="pill" data-gtype="emoticon">😊 이모티콘</button>
+          </div>
+
+          <form id="gift-send-form" class="form-stack mt-12">
+            <label>받는 사람 (아이디 또는 닉네임 직접 입력)
+              <input type="text" id="gift-recipient" placeholder="받는 분의 아이디 또는 닉네임을 입력하세요" required maxlength="32" />
+            </label>
+
+            <div id="gift-field-point">
+              <label>선물할 포인트 (최소 10P)
+                <input type="number" id="gift-amount" min="10" step="10" placeholder="예: 100" />
+              </label>
+            </div>
+
+            <div id="gift-field-item" class="hidden">
+              <label>선물할 아이템 선택
+                <select id="gift-item-select"></select>
+              </label>
+            </div>
+
+            <div id="gift-field-emoticon" class="hidden">
+              <label>선물할 이모티콘 선택
+                <select id="gift-emoticon-select"></select>
+              </label>
+            </div>
+
+            <label>선물 메시지 (선택)
+              <input type="text" id="gift-message" placeholder="응원이나 축하 메시지를 남겨보세요!" maxlength="120" />
+            </label>
+
+            <button type="submit" class="btn btn-pink">🎁 선물 보내기</button>
+          </form>
+        </div>
+
+        <div class="list-stack">
+          <div class="card">
+            <h3>💌 받은 선물함</h3>
+            <div id="gift-received-list" class="list-stack mt-12"></div>
+          </div>
+          <div class="card">
+            <h3>📤 보낸 선물함</h3>
+            <div id="gift-sent-list" class="list-stack mt-12"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ADMIN PAGE -->
+    <section id="page-admin" class="page">
+      <div class="page-head">
+        <div>
+          <h1>🛡️ 방송인 / 관리자 대시보드</h1>
+          <p class="muted">방송 상태, 시그니처, 일정, 회원 포인트 및 상점 교환을 관리합니다.</p>
+        </div>
+      </div>
+
+      <div class="tab-pills mb-12" id="admin-tabs">
+        <button type="button" class="pill active" data-atab="overview">⚙️ 전체 관리</button>
+        <button type="button" class="pill" data-atab="balances">💰 회원 포인트 잔고</button>
+      </div>
+
+      <div id="admin-tab-overview">
+      <div class="grid-2">
+        <div class="card">
+          <h3>📺 방송 상태 설정</h3>
+          <form id="admin-stream-form" class="form-stack mt-12">
+            <label class="checkbox-row">
+              <input type="checkbox" id="adm-is-live" />
+              <span>현재 생방송 중 (LIVE)</span>
+            </label>
+            <label>방송 제목 <input type="text" id="adm-stream-title" required maxlength="120" /></label>
+            <label>카테고리 <input type="text" id="adm-stream-cat" required maxlength="40" /></label>
+            <label>상단 배너 안내 <input type="text" id="adm-stream-banner" required maxlength="200" /></label>
+            <button type="submit" class="btn btn-pink btn-sm">방송 상태 저장</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>💰 회원 포인트 수동 지급 / 회수</h3>
+          <form id="admin-points-form" class="form-stack mt-12">
+            <label>회원 아이디 (username) <input type="text" id="adm-pt-user" placeholder="예: pinkfan" required /></label>
+            <label>변동 포인트 (+지급 / -회수) <input type="number" id="adm-pt-delta" placeholder="예: 100 또는 -50" required /></label>
+            <label>사유 <input type="text" id="adm-pt-reason" placeholder="예: 이벤트 당첨" required maxlength="120" /></label>
+            <button type="submit" class="btn btn-pink btn-sm">포인트 적용</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="grid-2 mt-16">
+        <div class="card">
+          <h3>✨ 시그니처 추가</h3>
+          <form id="admin-sig-form" class="form-stack mt-12">
+            <label>시그니처 이름 <input type="text" id="adm-sig-title" required maxlength="60" /></label>
+            <label>별풍선 개수 <input type="number" id="adm-sig-count" min="1" required /></label>
+            <label>카테고리
+              <select id="adm-sig-cat">
+                <option value="전체">전체</option>
+                <option value="NEW">NEW</option>
+                <option value="열혈">열혈</option>
+              </select>
+            </label>
+            <label>아이콘 이모지 <input type="text" id="adm-sig-badge" value="💖" maxlength="8" /></label>
+            <label>설명 <input type="text" id="adm-sig-desc" required maxlength="200" /></label>
+            <button type="submit" class="btn btn-pink btn-sm">시그니처 등록</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>📅 캘린더 일정 추가</h3>
+          <form id="admin-cal-form" class="form-stack mt-12">
+            <label>일정 제목 <input type="text" id="adm-cal-title" required maxlength="80" /></label>
+            <label>날짜 <input type="date" id="adm-cal-date" required /></label>
+            <label>시간 <input type="time" id="adm-cal-time" value="20:00" required /></label>
+            <label>구분
+              <select id="adm-cal-cat">
+                <option value="live">정규 방송</option>
+                <option value="collab">합방</option>
+                <option value="event">이벤트</option>
+                <option value="rest">휴방</option>
+              </select>
+            </label>
+            <label>설명 <input type="text" id="adm-cal-desc" maxlength="300" /></label>
+            <label>일정 색상 <input type="color" id="adm-cal-color" value="#ec4899" /></label>
+            <button type="submit" class="btn btn-pink btn-sm">일정 등록</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="grid-2 mt-16">
+        <div class="card">
+          <h3>🛍️ 포인트 상점 상품 추가</h3>
+          <form id="admin-shop-form" class="form-stack mt-12">
+            <label>상품명 <input type="text" id="adm-shop-name" required maxlength="60" /></label>
+            <label>필요 포인트 <input type="number" id="adm-shop-cost" min="1" required /></label>
+            <label>재고 수량 <input type="number" id="adm-shop-stock" min="0" value="10" required /></label>
+            <label>설명 <input type="text" id="adm-shop-desc" required maxlength="200" /></label>
+            <button type="submit" class="btn btn-pink btn-sm">상품 등록</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>👥 회원 / 매니저 권한 관리</h3>
+          <form id="admin-role-form" class="form-stack mt-12">
+            <label>아이디 또는 닉네임
+              <input type="text" id="adm-role-target" placeholder="예: pinkfan 또는 핑크단1호" required maxlength="32" />
+            </label>
+            <div class="row-gap">
+              <select id="adm-role-select" style="flex:1">
+                <option value="user">일반팬 (하향/해제)</option>
+                <option value="staff">관리자/매니저 (승격)</option>
+                <option value="admin">👑 방송인/주인 (주인 넘기기)</option>
+              </select>
+              <button type="submit" class="btn btn-pink btn-sm">권한 적용</button>
+            </div>
+          </form>
+          <input type="text" id="adm-user-search" class="mt-12" placeholder="🔍 회원 목록 검색 (아이디/닉네임/SOOP ID)..." maxlength="32" />
+          <div id="admin-users-list" class="list-stack mt-12"></div>
+        </div>
+      </div>
+
+      <div class="card mt-16" id="admin-soop-lookup-card">
+        <div class="card-header">
+          <h3>🔍 SOOP 인증 계정 조회</h3>
+          <span class="muted small">공홈 회원이 어떤 SOOP 아이디로 인증했는지 조회합니다</span>
+        </div>
+        <form id="admin-soop-lookup-form" class="search-form mt-12">
+          <input type="text" id="adm-soop-lookup-input" placeholder="공홈 아이디, 닉네임 또는 SOOP ID 입력 (비우면 인증된 회원 전체 조회)..." maxlength="40" />
+          <button type="submit" class="btn btn-pink btn-sm">조회</button>
+        </form>
+        <div id="admin-soop-lookup-result" class="list-stack mt-12"></div>
+      </div>
+
+      <div class="card mt-16" id="admin-soop-sdk-card">
+        <div class="card-header">
+          <h3>🔑 SOOP 공식 Chat SDK (API 키) 연동</h3>
+          <span class="badge-pink" id="adm-sdk-status">미설정</span>
+        </div>
+        <p class="muted small">
+          SOOP Developers에서 발급받은 <code>Client ID</code> / <code>Client Secret</code>을 등록하면 공식 Chat SDK로 본인 방송 채팅(+5P)과 계정 인증을 실시간 수집합니다.
+        </p>
+        <form id="admin-sdk-config-form" class="form-stack mt-12">
+          <div class="grid-2">
+            <label>Client ID
+              <input type="text" id="adm-sdk-client-id" placeholder="SOOP Developers Client ID" required maxlength="120" />
+            </label>
+            <label>Client Secret
+              <input type="password" id="adm-sdk-client-secret" placeholder="변경 시에만 입력 (저장 후 비공개)" maxlength="200" />
+            </label>
+          </div>
+          <div class="row-gap" style="flex-wrap:wrap">
+            <button type="submit" class="btn btn-pink btn-sm">API 키 저장</button>
+            <button type="button" class="btn btn-outline btn-sm" id="adm-sdk-oauth-btn">SOOP OAuth 로그인 인증</button>
+          </div>
+        </form>
+
+        <div class="row-gap mt-12" style="flex-wrap:wrap">
+          <input type="text" id="adm-sdk-cert-num" style="max-width:240px" placeholder="SOOP 앱 6자리 인증번호 (선택)" maxlength="12" />
+          <button type="button" class="btn btn-outline btn-sm" id="adm-sdk-cert-btn">인증번호로 토큰 발급</button>
+          <button type="button" class="btn btn-pink btn-sm" id="adm-sdk-connect-btn">공식 SDK 채팅 수집 시작</button>
+        </div>
+      </div>
+
+      <div class="card mt-16">
+        <h3>📦 상점 교환 신청 관리</h3>
+        <div id="admin-redemptions-list" class="list-stack mt-12"></div>
+      </div>
+      </div>
+
+      <div id="admin-tab-balances" class="hidden">
+        <div class="card">
+          <div class="card-header">
+            <h3>💰 전체 회원 포인트 잔고</h3>
+            <span class="badge-pink" id="adm-total-points-summary">총 0명 · 0P</span>
+          </div>
+          <div class="row-gap mt-12" style="flex-wrap:wrap">
+            <input type="text" id="adm-balance-search" style="flex:1; min-width:200px" placeholder="🔍 아이디, 닉네임 또는 SOOP ID 검색..." maxlength="32" />
+            <select id="adm-balance-sort" style="width:160px; flex-shrink:0">
+              <option value="desc">포인트 높은 순</option>
+              <option value="asc">포인트 낮은 순</option>
+              <option value="id">가입순</option>
+            </select>
+          </div>
+          <div id="admin-balances-list" class="list-stack mt-12"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL -->
+  <div id="modal-backdrop" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 id="modal-title">모달</h3>
+        <button class="icon-btn" id="modal-close-btn">✕</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
+  <script src="/static/app.js?v=20261120p"></script>
+</body>
+</html>
