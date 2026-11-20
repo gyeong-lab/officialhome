@@ -1,6 +1,7 @@
 import hmac
 import html as html_lib
 import json
+import os
 import re
 import time
 import urllib.error
@@ -59,7 +60,8 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 @app.on_event("startup")
 async def on_startup() -> None:
     init_db()
-    start_collector(lambda sid, msg: _process_soop_chat_event(sid, msg))
+    if not os.environ.get("VERCEL"):
+        start_collector(lambda sid, msg: _process_soop_chat_event(sid, msg))
 
 
 @app.middleware("http")
