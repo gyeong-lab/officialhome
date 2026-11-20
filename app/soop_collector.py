@@ -47,9 +47,10 @@ def _fetch_live_chat_creds(channel_id: str) -> dict | None:
     if not isinstance(st_data.get("broad"), dict) or not st_data["broad"].get("broad_no"):
         return None
 
-    api_url = f"https://live.sooplive.com/afreeca/player_live_api.php?bjid={urllib.parse.quote(channel_id)}"
+    api_url = f"https://live.sooplive.co.kr/afreeca/player_live_api.php?bjid={urllib.parse.quote(channel_id)}"
     form = urllib.parse.urlencode(
         {
+            "bid": channel_id,
             "bjid": channel_id,
             "type": "live",
             "player_type": "html5",
