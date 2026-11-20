@@ -9,6 +9,10 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = Path(os.environ.get("APP_DB_PATH", str(DATA_DIR / "site.db")))
+_raw_db_url = (os.environ.get("DATABASE_URL") or "").strip()
+if _raw_db_url.startswith("postgres://"):
+    _raw_db_url = "postgresql://" + _raw_db_url[len("postgres://"):]
+DATABASE_URL = _raw_db_url
 SECRET_FILE = DATA_DIR / ".secrets"
 
 

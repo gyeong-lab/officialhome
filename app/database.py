@@ -1,10 +1,107 @@
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Generator
+from typing import Any, Generator
 
-from app.config import DB_PATH
+from app.config import DATABASE_URL, DB_PATH
 from app.security import hash_password
+
+_TABLES_WITH_ID = {
+    "users",
+    "posts",
+    "comments",
+    "signatures",
+    "calendar_events",
+    "point_ledger",
+    "shop_items",
+    "redemptions",
+    "predictions",
+    "prediction_bets",
+    "gifts",
+    "emoticons",
+}
+
+_INSERT_TABLE_RE = re.compile(r"^\s*INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)\b", re.IGNORECASE)
+
+
+def _is_postgres() -> bool:
+    return bool(DATABASE_URL)
+
+
+def _qmark_to_percent(sql: str) -> str:
+    """Convert SQLite `?` placeholders outside single-quoted literals to psycopg `%s`."""
+    out: list[str] = []
+    in_quote = False
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            out.append(ch)
+            if in_quote and i + 1 < n and sql[i + 1] == "'":
+                out.append("'")
+                i += 2
+                continue
+            in_quote = not in_quote
+        elif ch == "?" and not in_quote:
+            out.append("%s")
+        elif ch == "%" and not in_quote:
+            out.append("%%")
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+class _PgCursorWrapper:
+    def __init__(self, cur: Any, lastrowid: int | None = None) -> None:
+        self._cur = cur
+        self.lastrowid = lastrowid
+
+    @property
+    def rowcount(self) -> int:
+        return self._cur.rowcount
+
+    def fetchone(self) -> Any:
+        return self._cur.fetchone()
+
+    def fetchall(self) -> list[Any]:
+        return self._cur.fetchall()
+
+
+class _PgConnectionWrapper:
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, params: tuple | list = ()) -> _PgCursorWrapper:
+        stripped = sql.strip()
+        upper = stripped.upper()
+        if upper.startswith("PRAGMA") or upper == "BEGIN IMMEDIATE":
+            return _PgCursorWrapper(None)
+
+        pg_sql = _qmark_to_percent(stripped)
+        lastrowid = None
+        m = _INSERT_TABLE_RE.match(pg_sql)
+        if m and m.group(1).lower() in _TABLES_WITH_ID and "RETURNING" not in upper:
+            pg_sql = pg_sql.rstrip(";") + " RETURNING id"
+            cur = self._conn.execute(pg_sql, params or ())
+            row = cur.fetchone()
+            if row:
+                lastrowid = row["id"]
+            return _PgCursorWrapper(cur, lastrowid=lastrowid)
+
+        cur = self._conn.execute(pg_sql, params or ())
+        return _PgCursorWrapper(cur)
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def rollback(self) -> None:
+        self._conn.rollback()
+
+    def close(self) -> None:
+        self._conn.close()
 
 
 def utc_now_iso() -> str:
@@ -18,7 +115,14 @@ def today_kst_str() -> str:
     return kst.strftime("%Y-%m-%d")
 
 
-def get_connection() -> sqlite3.Connection:
+def get_connection() -> Any:
+    if _is_postgres():
+        import psycopg
+        from psycopg.rows import dict_row
+
+        conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        return _PgConnectionWrapper(conn)
+
     conn = sqlite3.connect(str(DB_PATH), timeout=15.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -27,10 +131,11 @@ def get_connection() -> sqlite3.Connection:
 
 
 @contextmanager
-def transaction() -> Generator[sqlite3.Connection, None, None]:
+def transaction() -> Generator[Any, None, None]:
     conn = get_connection()
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        if not _is_postgres():
+            conn.execute("BEGIN IMMEDIATE")
         yield conn
         conn.commit()
     except Exception:
@@ -151,10 +256,219 @@ def _migrate_posts_tab_check_if_needed() -> None:
         conn.close()
 
 
+_PG_SCHEMA_STATEMENTS = [
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        nickname TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'staff', 'admin')),
+        points INTEGER NOT NULL DEFAULT 0 CHECK(points >= 0),
+        soop_id TEXT UNIQUE,
+        soop_verified INTEGER NOT NULL DEFAULT 0,
+        soop_pending_id TEXT,
+        soop_verify_code TEXT,
+        ban_until TEXT,
+        is_blacklisted INTEGER NOT NULL DEFAULT 0,
+        ban_reason TEXT NOT NULL DEFAULT '',
+        double_points_until TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        csrf_token TEXT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS posts (
+        id SERIAL PRIMARY KEY,
+        tab TEXT NOT NULL CHECK(tab IN ('notice', 'free', 'fanart', 'clip', 'qna', 'emoticon')),
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        is_anonymous INTEGER NOT NULL DEFAULT 0,
+        is_hidden INTEGER NOT NULL DEFAULT 0,
+        attachments TEXT NOT NULL DEFAULT '[]',
+        views INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS comments (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS post_likes (
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (post_id, user_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS signatures (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        balloon_count INTEGER NOT NULL CHECK(balloon_count > 0),
+        category TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        badge TEXT NOT NULL DEFAULT '💖',
+        clip_url TEXT NOT NULL DEFAULT '',
+        image_url TEXT NOT NULL DEFAULT '',
+        tags TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS calendar_events (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        start_time TEXT NOT NULL DEFAULT '20:00',
+        category TEXT NOT NULL CHECK(category IN ('live', 'event', 'collab', 'rest')),
+        description TEXT NOT NULL DEFAULT '',
+        color TEXT NOT NULL DEFAULT '#ec4899',
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS point_ledger (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        delta INTEGER NOT NULL,
+        balance_after INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        source TEXT NOT NULL,
+        idempotency_key TEXT UNIQUE,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS shop_items (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        cost INTEGER NOT NULL CHECK(cost > 0),
+        stock INTEGER NOT NULL CHECK(stock >= 0),
+        is_active INTEGER NOT NULL DEFAULT 1
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS redemptions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES shop_items(id),
+        item_name TEXT NOT NULL,
+        cost INTEGER NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS soop_chat_tracker (
+        soop_id TEXT PRIMARY KEY,
+        last_awarded_ts DOUBLE PRECISION NOT NULL DEFAULT 0,
+        daily_date TEXT NOT NULL,
+        daily_points INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS stream_status (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        streamer_name TEXT NOT NULL,
+        soop_channel_id TEXT NOT NULL,
+        is_live INTEGER NOT NULL DEFAULT 0,
+        title TEXT NOT NULL DEFAULT '',
+        category TEXT NOT NULL DEFAULT '',
+        notice_banner TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS predictions (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        option_a TEXT NOT NULL DEFAULT '',
+        option_b TEXT NOT NULL DEFAULT '',
+        options_json TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'locked', 'settled', 'cancelled')),
+        winner TEXT,
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL,
+        settled_at TEXT,
+        closes_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS prediction_bets (
+        id SERIAL PRIMARY KEY,
+        prediction_id INTEGER NOT NULL REFERENCES predictions(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        choice TEXT NOT NULL,
+        amount INTEGER NOT NULL CHECK(amount > 0),
+        payout INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS gifts (
+        id SERIAL PRIMARY KEY,
+        sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        gift_type TEXT NOT NULL CHECK(gift_type IN ('point', 'item', 'emoticon')),
+        title TEXT NOT NULL,
+        cost INTEGER NOT NULL DEFAULT 0,
+        message TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS emoticons (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        glyph TEXT NOT NULL DEFAULT '',
+        image_url TEXT NOT NULL DEFAULT '',
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS site_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+    )
+    """,
+]
+
+
+def _init_pg_schema(conn: Any) -> None:
+    for stmt in _PG_SCHEMA_STATEMENTS:
+        conn.execute(stmt)
+
+
 def init_db() -> None:
-    _migrate_posts_tab_check_if_needed()
+    if not _is_postgres():
+        _migrate_posts_tab_check_if_needed()
     with transaction() as conn:
-        conn.executescript(
+        if _is_postgres():
+            _init_pg_schema(conn)
+        else:
+            conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -337,73 +651,73 @@ def init_db() -> None:
             """
         )
 
-        # Auto-migrate existing posts table if needed
-        post_cols = {row["name"] for row in conn.execute("PRAGMA table_info(posts)").fetchall()}
-        if "is_anonymous" not in post_cols:
-            conn.execute("ALTER TABLE posts ADD COLUMN is_anonymous INTEGER NOT NULL DEFAULT 0")
-        if "attachments" not in post_cols:
-            conn.execute("ALTER TABLE posts ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'")
-        if "is_hidden" not in post_cols:
-            conn.execute("ALTER TABLE posts ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0")
+            # Auto-migrate existing posts table if needed
+            post_cols = {row["name"] for row in conn.execute("PRAGMA table_info(posts)").fetchall()}
+            if "is_anonymous" not in post_cols:
+                conn.execute("ALTER TABLE posts ADD COLUMN is_anonymous INTEGER NOT NULL DEFAULT 0")
+            if "attachments" not in post_cols:
+                conn.execute("ALTER TABLE posts ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'")
+            if "is_hidden" not in post_cols:
+                conn.execute("ALTER TABLE posts ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0")
 
-        cal_cols = {row["name"] for row in conn.execute("PRAGMA table_info(calendar_events)").fetchall()}
-        if "color" not in cal_cols:
-            conn.execute("ALTER TABLE calendar_events ADD COLUMN color TEXT NOT NULL DEFAULT '#ec4899'")
+            cal_cols = {row["name"] for row in conn.execute("PRAGMA table_info(calendar_events)").fetchall()}
+            if "color" not in cal_cols:
+                conn.execute("ALTER TABLE calendar_events ADD COLUMN color TEXT NOT NULL DEFAULT '#ec4899'")
 
-        sig_cols = {row["name"] for row in conn.execute("PRAGMA table_info(signatures)").fetchall()}
-        if "clip_url" not in sig_cols:
-            conn.execute("ALTER TABLE signatures ADD COLUMN clip_url TEXT NOT NULL DEFAULT ''")
-        if "image_url" not in sig_cols:
-            conn.execute("ALTER TABLE signatures ADD COLUMN image_url TEXT NOT NULL DEFAULT ''")
-        if "tags" not in sig_cols:
-            conn.execute("ALTER TABLE signatures ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+            sig_cols = {row["name"] for row in conn.execute("PRAGMA table_info(signatures)").fetchall()}
+            if "clip_url" not in sig_cols:
+                conn.execute("ALTER TABLE signatures ADD COLUMN clip_url TEXT NOT NULL DEFAULT ''")
+            if "image_url" not in sig_cols:
+                conn.execute("ALTER TABLE signatures ADD COLUMN image_url TEXT NOT NULL DEFAULT ''")
+            if "tags" not in sig_cols:
+                conn.execute("ALTER TABLE signatures ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
 
-        user_cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
-        if "ban_until" not in user_cols:
-            conn.execute("ALTER TABLE users ADD COLUMN ban_until TEXT")
-        if "is_blacklisted" not in user_cols:
-            conn.execute("ALTER TABLE users ADD COLUMN is_blacklisted INTEGER NOT NULL DEFAULT 0")
-        if "ban_reason" not in user_cols:
-            conn.execute("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''")
-        if "double_points_until" not in user_cols:
-            conn.execute("ALTER TABLE users ADD COLUMN double_points_until TEXT")
+            user_cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "ban_until" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN ban_until TEXT")
+            if "is_blacklisted" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN is_blacklisted INTEGER NOT NULL DEFAULT 0")
+            if "ban_reason" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''")
+            if "double_points_until" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN double_points_until TEXT")
 
-        pred_cols = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
-        if "options_json" not in pred_cols:
-            # Recreate empty prediction tables without A/B-only CHECK constraints
-            cnt = conn.execute("SELECT COUNT(*) AS c FROM predictions").fetchone()["c"]
-            if cnt == 0:
-                conn.execute("DROP TABLE IF EXISTS prediction_bets")
-                conn.execute("DROP TABLE IF EXISTS predictions")
-                conn.executescript(
-                    """
-                    CREATE TABLE predictions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        title TEXT NOT NULL,
-                        option_a TEXT NOT NULL DEFAULT '',
-                        option_b TEXT NOT NULL DEFAULT '',
-                        options_json TEXT NOT NULL DEFAULT '[]',
-                        status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'locked', 'settled', 'cancelled')),
-                        winner TEXT,
-                        created_by INTEGER NOT NULL REFERENCES users(id),
-                        created_at TEXT NOT NULL,
-                        settled_at TEXT
-                    );
-                    CREATE TABLE prediction_bets (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        prediction_id INTEGER NOT NULL REFERENCES predictions(id) ON DELETE CASCADE,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        choice TEXT NOT NULL,
-                        amount INTEGER NOT NULL CHECK(amount > 0),
-                        payout INTEGER NOT NULL DEFAULT 0,
-                        created_at TEXT NOT NULL
-                    );
-                    """
-                )
-            else:
-                conn.execute("ALTER TABLE predictions ADD COLUMN options_json TEXT NOT NULL DEFAULT '[]'")
-        if "closes_at" not in pred_cols:
-            conn.execute("ALTER TABLE predictions ADD COLUMN closes_at TEXT")
+            pred_cols = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
+            if "options_json" not in pred_cols:
+                # Recreate empty prediction tables without A/B-only CHECK constraints
+                cnt = conn.execute("SELECT COUNT(*) AS c FROM predictions").fetchone()["c"]
+                if cnt == 0:
+                    conn.execute("DROP TABLE IF EXISTS prediction_bets")
+                    conn.execute("DROP TABLE IF EXISTS predictions")
+                    conn.executescript(
+                        """
+                        CREATE TABLE predictions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            title TEXT NOT NULL,
+                            option_a TEXT NOT NULL DEFAULT '',
+                            option_b TEXT NOT NULL DEFAULT '',
+                            options_json TEXT NOT NULL DEFAULT '[]',
+                            status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'locked', 'settled', 'cancelled')),
+                            winner TEXT,
+                            created_by INTEGER NOT NULL REFERENCES users(id),
+                            created_at TEXT NOT NULL,
+                            settled_at TEXT
+                        );
+                        CREATE TABLE prediction_bets (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            prediction_id INTEGER NOT NULL REFERENCES predictions(id) ON DELETE CASCADE,
+                            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            choice TEXT NOT NULL,
+                            amount INTEGER NOT NULL CHECK(amount > 0),
+                            payout INTEGER NOT NULL DEFAULT 0,
+                            created_at TEXT NOT NULL
+                        );
+                        """
+                    )
+                else:
+                    conn.execute("ALTER TABLE predictions ADD COLUMN options_json TEXT NOT NULL DEFAULT '[]'")
+            if "closes_at" not in pred_cols:
+                conn.execute("ALTER TABLE predictions ADD COLUMN closes_at TEXT")
 
         # Seed only if users table is empty
         user_count = conn.execute("SELECT COUNT(*) AS cnt FROM users").fetchone()["cnt"]
