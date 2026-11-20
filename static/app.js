@@ -2275,34 +2275,8 @@
           el("button", {
             type: "button",
             className: "btn btn-danger btn-sm",
-            textContent: "삭제",
-            onClick: () => {
-              const confirmForm = el("form", { className: "form-stack" }, [
-                el("p", {
-                  textContent: `정말 '${u.nickname} (${u.username})' 계정을 삭제하시겠습니까?`,
-                }),
-                el("p", {
-                  className: "muted small",
-                  textContent: "삭제 후에는 되돌릴 수 없으며, 해당 계정의 활동 데이터도 함께 삭제됩니다.",
-                }),
-                el("div", { className: "modal-footer-end" }, [
-                  el("button", { type: "button", className: "btn btn-outline btn-sm", textContent: "취소", onClick: closeModal }),
-                  el("button", { type: "submit", className: "btn btn-danger btn-sm", textContent: "삭제 확정" }),
-                ]),
-              ]);
-              confirmForm.addEventListener("submit", async (e) => {
-                e.preventDefault();
-                try {
-                  await api(`/api/admin/users/${u.id}`, { method: "DELETE" });
-                  closeModal();
-                  showToast(`${u.nickname} (${u.username}) 계정이 삭제되었습니다.`);
-                  loadAdminPage();
-                } catch (err) {
-                  showToast(err.message);
-                }
-              });
-              openModal("계정 삭제 확인", confirmForm);
-            },
+            textContent: "탈퇴",
+            onClick: () => confirmDeleteUser(u),
           })
         );
       }
@@ -2913,6 +2887,34 @@
     }
   }
 
+  function confirmDeleteUser(u) {
+    const confirmForm = el("form", { className: "form-stack" }, [
+      el("p", {
+        textContent: `정말 '${u.nickname} (${u.username})' 회원을 탈퇴(삭제) 시키겠습니까?`,
+      }),
+      el("p", {
+        className: "muted small",
+        textContent: "탈퇴 처리 후에는 되돌릴 수 없으며, 해당 계정의 활동 데이터도 함께 삭제됩니다.",
+      }),
+      el("div", { className: "modal-footer-end" }, [
+        el("button", { type: "button", className: "btn btn-outline btn-sm", textContent: "취소", onClick: closeModal }),
+        el("button", { type: "submit", className: "btn btn-danger btn-sm", textContent: "탈퇴 확정" }),
+      ]),
+    ]);
+    confirmForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/api/admin/users/${u.id}`, { method: "DELETE" });
+        closeModal();
+        showToast(`${u.nickname} (${u.username}) 회원이 탈퇴 처리되었습니다.`);
+        loadAdminPage();
+      } catch (err) {
+        showToast(err.message);
+      }
+    });
+    openModal("회원 강제 탈퇴 확인", confirmForm);
+  }
+
   function openUserManageModal(u, isBanned) {
     const stack = el("div", { className: "form-stack" });
 
@@ -3017,6 +3019,17 @@
             },
           }),
         ])
+      );
+    }
+
+    if (u.role !== "admin" && u.id !== state.user.id && (state.user.role === "admin" || u.role === "user")) {
+      stack.appendChild(
+        el("button", {
+          type: "button",
+          className: "btn btn-danger btn-sm",
+          textContent: "회원 강제 탈퇴",
+          onClick: () => confirmDeleteUser(u),
+        })
       );
     }
 
