@@ -2740,6 +2740,16 @@
           })
         );
       }
+      if (u.id !== state.user.id) {
+        btnGrid.appendChild(
+          el("button", {
+            type: "button",
+            className: "btn btn-danger btn-sm",
+            textContent: "🗑️ 계정 삭제",
+            onClick: () => confirmDeleteUser(u),
+          })
+        );
+      }
       stack.appendChild(btnGrid);
     }
 
