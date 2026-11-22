@@ -697,7 +697,8 @@ def _process_soop_chat_event(soop_id_raw: str, message_raw: str, event_id: str |
             remaining = round(CHAT_COOLDOWN_SECONDS - (now_ts - last_ts), 1)
             return {"status": "cooldown", "reason": f"도배 방지 쿨타임 중 ({remaining}초 남음)"}
 
-        if daily_points + CHAT_POINTS_PER_MSG > CHAT_DAILY_CAP_POINTS:
+        actual_award = CHAT_POINTS_PER_MSG * (2 if is_double_points_active(conn, user["id"]) else 1)
+        if daily_points + actual_award > CHAT_DAILY_CAP_POINTS:
             return {"status": "capped", "reason": f"일일 채팅 포인트 상한({CHAT_DAILY_CAP_POINTS}P)에 도달했습니다."}
 
         idem_key = f"soop_chat:{event_id}" if event_id else None
@@ -721,13 +722,13 @@ def _process_soop_chat_event(soop_id_raw: str, message_raw: str, event_id: str |
                 daily_date = excluded.daily_date,
                 daily_points = excluded.daily_points
             """,
-            (soop_id, now_ts, today, daily_points + CHAT_POINTS_PER_MSG),
+            (soop_id, now_ts, today, daily_points + actual_award),
         )
         return {
             "status": "awarded",
-            "awarded": CHAT_POINTS_PER_MSG,
+            "awarded": actual_award,
             "balance": new_balance,
-            "daily_points": daily_points + CHAT_POINTS_PER_MSG,
+            "daily_points": daily_points + actual_award,
             "daily_cap": CHAT_DAILY_CAP_POINTS,
         }
 

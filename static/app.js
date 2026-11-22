@@ -2047,107 +2047,109 @@
   }
 
   async function loadPointsPage() {
-    renderSoopLinkSection();
-    renderHomeUserBox();
+    try { renderSoopLinkSection(); } catch (_) {}
+    try { renderHomeUserBox(); } catch (_) {}
     refreshCollectorStatus();
     loadPredictions();
 
-    const shopData = await api("/api/shop/items");
-    const shopGrid = document.getElementById("shop-grid");
-    const shopAddBtn = document.getElementById("shop-add-btn");
-    clear(shopGrid);
-    const adminMode = isStaffOrAdmin();
-    shopAddBtn.classList.toggle("hidden", !adminMode);
+    try {
+      const shopData = await api("/api/shop/items");
+      const shopGrid = document.getElementById("shop-grid");
+      const shopAddBtn = document.getElementById("shop-add-btn");
+      clear(shopGrid);
+      const adminMode = isStaffOrAdmin();
+      shopAddBtn.classList.toggle("hidden", !adminMode);
 
-    if (!(shopData.items || []).length) {
-      shopGrid.appendChild(el("p", { className: "muted", textContent: "현재 등록된 상품이 없습니다." }));
-    }
-    (shopData.items || []).forEach((item) => {
-      const actions = el("div", { className: "row-gap" }, [
-        el("button", {
-          className: "btn btn-pink btn-sm",
-          textContent: "교환하기",
-          onClick: async () => {
-            if (!state.user) return showToast("로그인이 필요합니다.");
-            try {
-              const res = await api("/api/shop/redeem", {
-                method: "POST",
-                body: { item_id: item.id, note: "" },
-              });
-              showToast(
-                res.double_points_until
-                  ? `${res.item_name} 적용 완료! (${formatDate(res.double_points_until)}까지 획득 포인트 2배)`
-                  : `${res.item_name} 교환 완료! (자동 승인)`
-              );
-              await refreshMe();
-              loadPointsPage();
-            } catch (err) {
-              showToast(err.message);
-            }
-          },
-        }),
-      ]);
-      if (adminMode) {
-        actions.appendChild(
-          el("button", {
-            className: "btn btn-outline btn-sm",
-            textContent: "수정",
-            onClick: () => {
-              const nameIn = el("input", { type: "text", required: "true", maxlength: "60", value: item.name });
-              const costIn = el("input", { type: "number", required: "true", min: "1", value: String(item.cost) });
-              const stockIn = el("input", { type: "number", required: "true", min: "0", value: String(item.stock) });
-              const descIn = el("input", { type: "text", required: "true", maxlength: "200", value: item.description });
-              const form = el("form", { className: "form-stack" }, [
-                el("label", {}, ["상품명", nameIn]),
-                el("label", {}, ["필요 포인트", costIn]),
-                el("label", {}, ["재고", stockIn]),
-                el("label", {}, ["설명", descIn]),
-                el("button", { type: "submit", className: "btn btn-pink", textContent: "수정 저장" }),
-              ]);
-              form.addEventListener("submit", async (e) => {
-                e.preventDefault();
-                await api(`/api/shop/items/${item.id}`, {
-                  method: "PUT",
-                  body: {
-                    name: nameIn.value,
-                    cost: Number(costIn.value),
-                    stock: Number(stockIn.value),
-                    description: descIn.value,
-                  },
-                });
-                closeModal();
-                showToast("상품이 수정되었습니다.");
-                loadPointsPage();
-              });
-              openModal("상점 상품 수정", form);
-            },
-          })
-        );
-        actions.appendChild(
-          el("button", {
-            className: "btn btn-danger btn-sm",
-            textContent: "삭제",
-            onClick: async () => {
-              await api(`/api/shop/items/${item.id}`, { method: "DELETE" });
-              showToast("상품이 삭제되었습니다.");
-              loadPointsPage();
-            },
-          })
-        );
+      if (!(shopData.items || []).length) {
+        shopGrid.appendChild(el("p", { className: "muted", textContent: "현재 등록된 상품이 없습니다." }));
       }
-      shopGrid.appendChild(
-        el("div", { className: "shop-card" }, [
-          el("div", {}, [
-            el("strong", { textContent: item.name }),
-            el("p", { className: "muted small", textContent: item.description }),
-          ]),
-          el("div", { className: "row-gap", style: "justify-content:space-between" }, [
-            el("span", { className: "badge-pink", textContent: `${item.cost.toLocaleString()} P · 재고 ${item.stock}` }),
-            actions,
-          ]),
-        ])
-      );
-    });
+      (shopData.items || []).forEach((item) => {
+        const actions = el("div", { className: "row-gap" }, [
+          el("button", {
+            className: "btn btn-pink btn-sm",
+            textContent: "교환하기",
+            onClick: async () => {
+              if (!state.user) return showToast("로그인이 필요합니다.");
+              try {
+                const res = await api("/api/shop/redeem", {
+                  method: "POST",
+                  body: { item_id: item.id, note: "" },
+                });
+                showToast(
+                  res.double_points_until
+                    ? `${res.item_name} 적용 완료! (${formatDate(res.double_points_until)}까지 획득 포인트 2배)`
+                    : `${res.item_name} 교환 완료! (자동 승인)`
+                );
+                await refreshMe();
+                loadPointsPage();
+              } catch (err) {
+                showToast(err.message);
+              }
+            },
+          }),
+        ]);
+        if (adminMode) {
+          actions.appendChild(
+            el("button", {
+              className: "btn btn-outline btn-sm",
+              textContent: "수정",
+              onClick: () => {
+                const nameIn = el("input", { type: "text", required: "true", maxlength: "60", value: item.name });
+                const costIn = el("input", { type: "number", required: "true", min: "1", value: String(item.cost) });
+                const stockIn = el("input", { type: "number", required: "true", min: "0", value: String(item.stock) });
+                const descIn = el("input", { type: "text", required: "true", maxlength: "200", value: item.description });
+                const form = el("form", { className: "form-stack" }, [
+                  el("label", {}, ["상품명", nameIn]),
+                  el("label", {}, ["필요 포인트", costIn]),
+                  el("label", {}, ["재고", stockIn]),
+                  el("label", {}, ["설명", descIn]),
+                  el("button", { type: "submit", className: "btn btn-pink", textContent: "수정 저장" }),
+                ]);
+                form.addEventListener("submit", async (e) => {
+                  e.preventDefault();
+                  await api(`/api/shop/items/${item.id}`, {
+                    method: "PUT",
+                    body: {
+                      name: nameIn.value,
+                      cost: Number(costIn.value),
+                      stock: Number(stockIn.value),
+                      description: descIn.value,
+                    },
+                  });
+                  closeModal();
+                  showToast("상품이 수정되었습니다.");
+                  loadPointsPage();
+                });
+                openModal("상점 상품 수정", form);
+              },
+            })
+          );
+          actions.appendChild(
+            el("button", {
+              className: "btn btn-danger btn-sm",
+              textContent: "삭제",
+              onClick: async () => {
+                await api(`/api/shop/items/${item.id}`, { method: "DELETE" });
+                showToast("상품이 삭제되었습니다.");
+                loadPointsPage();
+              },
+            })
+          );
+        }
+        shopGrid.appendChild(
+          el("div", { className: "shop-card" }, [
+            el("div", {}, [
+              el("strong", { textContent: item.name }),
+              el("p", { className: "muted small", textContent: item.description }),
+            ]),
+            el("div", { className: "row-gap", style: "justify-content:space-between" }, [
+              el("span", { className: "badge-pink", textContent: `${item.cost.toLocaleString()} P · 재고 ${item.stock}` }),
+              actions,
+            ]),
+          ])
+        );
+      });
+    } catch (_) {}
 
     const ledgerWrap = document.getElementById("ledger-list");
     const ledgerPag = document.getElementById("ledger-pagination");
@@ -2162,10 +2164,17 @@
       return;
     }
 
-    const [ledgerRes, redRes] = await Promise.all([
-      api(`/api/points/ledger?page=${state.ledgerPage || 1}&per_page=10`),
-      api("/api/redemptions/me"),
-    ]);
+    let ledgerRes = { ledger: [] };
+    let redRes = { redemptions: [] };
+    try {
+      [ledgerRes, redRes] = await Promise.all([
+        api(`/api/points/ledger?page=${state.ledgerPage || 1}&per_page=10`),
+        api("/api/redemptions/me"),
+      ]);
+    } catch (err) {
+      ledgerWrap.appendChild(el("p", { className: "muted small", textContent: err.message || "포인트 원장을 불러오지 못했습니다." }));
+      return;
+    }
 
     if (!(ledgerRes.ledger || []).length) {
       ledgerWrap.appendChild(el("p", { className: "muted small", textContent: "포인트 내역이 없습니다." }));
