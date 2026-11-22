@@ -19,27 +19,27 @@
     [11, 11],
   ];
   const DIFF_LABELS = { easy: "쉬움", normal: "보통", hard: "어려움" };
-  const DIFF_STAKES = { easy: 100, normal: 300, hard: 500 };
-  const DIFF_REWARDS = { easy: 200, normal: 700, hard: 1500 };
 
   const omok = {
     initialized: false,
     canvas: null,
     ctx: null,
-    board: [],
-    turn: 1, // 1 = Player (Black), 2 = AI (White)
-    mode: "practice", // "practice" | "challenge"
+    mode: "practice", // "practice" | "pvp"
     difficulty: "normal",
-    activeRunId: null,
+    selectedStake: 100,
+    board: [],
+    turn: 1,
     running: false,
     gameOver: false,
     aiThinking: false,
-    settling: false,
     movesCount: 0,
     lastMove: null,
     hoverCell: null,
     winLine: null,
-    startedAtMs: 0,
+    pvpRoom: null,
+    pvpSending: false,
+    pollTimer: null,
+    countdownTimer: null,
     apiHelper: null,
     getUser: null,
     onPointsChanged: null,
@@ -79,24 +79,19 @@
     for (const [dr, dc] of DIRS) {
       let count = 1;
       let openEnds = 0;
-
       let step = 1;
       while (inBounds(r + dr * step, c + dc * step) && board[r + dr * step][c + dc * step] === player) {
         count++;
         step++;
       }
-      if (inBounds(r + dr * step, c + dc * step) && board[r + dr * step][c + dc * step] === 0) {
-        openEnds++;
-      }
+      if (inBounds(r + dr * step, c + dc * step) && board[r + dr * step][c + dc * step] === 0) openEnds++;
 
       step = 1;
       while (inBounds(r - dr * step, c - dc * step) && board[r - dr * step][c - dc * step] === player) {
         count++;
         step++;
       }
-      if (inBounds(r - dr * step, c - dc * step) && board[r - dr * step][c - dc * step] === 0) {
-        openEnds++;
-      }
+      if (inBounds(r - dr * step, c - dc * step) && board[r - dr * step][c - dc * step] === 0) openEnds++;
 
       if (count >= 5) total += 1000000;
       else if (count === 4 && openEnds === 2) total += 90000;
@@ -107,9 +102,7 @@
       else if (count === 2 && openEnds === 1) total += 60;
       else if (count === 1 && openEnds === 2) total += 15;
     }
-    const centerDist = Math.abs(r - 7) + Math.abs(c - 7);
-    total += Math.max(0, 14 - centerDist);
-    return total;
+    return total + Math.max(0, 14 - (Math.abs(r - 7) + Math.abs(c - 7)));
   }
 
   function getCandidateCells(board) {
@@ -135,7 +128,6 @@
         }
       }
     }
-
     if (!hasStone) return [{ r: 7, c: 7, score: 100 }];
     candidates.sort((a, b) => b.score - a.score);
     return candidates;
@@ -145,15 +137,12 @@
     const candidates = getCandidateCells(omok.board);
     if (candidates.length === 0) return null;
 
-    // Immediate winning move for AI
     for (const cand of candidates) {
       omok.board[cand.r][cand.c] = 2;
       const win = checkWinAt(omok.board, cand.r, cand.c, 2);
       omok.board[cand.r][cand.c] = 0;
       if (win) return cand;
     }
-
-    // Immediate block for Player's 5-in-a-row
     for (const cand of candidates) {
       omok.board[cand.r][cand.c] = 1;
       const win = checkWinAt(omok.board, cand.r, cand.c, 1);
@@ -163,21 +152,14 @@
 
     if (omok.difficulty === "easy") {
       const pool = candidates.slice(0, Math.min(4, candidates.length));
-      if (Math.random() < 0.45 && pool.length > 1) {
-        return pool[Math.floor(Math.random() * pool.length)];
-      }
+      if (Math.random() < 0.45 && pool.length > 1) return pool[Math.floor(Math.random() * pool.length)];
       return pool[0];
     }
+    if (omok.difficulty === "normal") return candidates[0];
 
-    if (omok.difficulty === "normal") {
-      return candidates[0];
-    }
-
-    // Hard: 2-ply lookahead over top 8 candidates
     const top = candidates.slice(0, Math.min(8, candidates.length));
     let bestMove = top[0];
     let bestVal = -Infinity;
-
     for (const cand of top) {
       omok.board[cand.r][cand.c] = 2;
       const oppCands = getCandidateCells(omok.board);
@@ -190,90 +172,6 @@
       }
     }
     return bestMove;
-  }
-
-  function drawBoard() {
-    const ctx = omok.ctx;
-    if (!ctx) return;
-
-    // Wood background
-    const bg = ctx.createLinearGradient(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-    bg.addColorStop(0, "#f7d59c");
-    bg.addColorStop(1, "#e7b46c");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-
-    // Grid lines
-    ctx.strokeStyle = "rgba(92, 58, 22, 0.72)";
-    ctx.lineWidth = 1;
-    for (let i = 0; i < SIZE; i++) {
-      const pos = PAD + i * CELL;
-      ctx.beginPath();
-      ctx.moveTo(PAD, pos);
-      ctx.lineTo(CANVAS_SIZE - PAD, pos);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(pos, PAD);
-      ctx.lineTo(pos, CANVAS_SIZE - PAD);
-      ctx.stroke();
-    }
-
-    // Star points
-    ctx.fillStyle = "#5c3a16";
-    for (const [sr, sc] of STAR_POINTS) {
-      ctx.beginPath();
-      ctx.arc(PAD + sc * CELL, PAD + sr * CELL, 3.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Hover preview stone
-    if (omok.running && !omok.gameOver && !omok.aiThinking && omok.turn === 1 && omok.hoverCell) {
-      const { r, c } = omok.hoverCell;
-      if (inBounds(r, c) && omok.board[r][c] === 0) {
-        ctx.save();
-        ctx.globalAlpha = 0.42;
-        drawStone(ctx, PAD + c * CELL, PAD + r * CELL, 1);
-        ctx.restore();
-      }
-    }
-
-    // Placed stones
-    for (let r = 0; r < SIZE; r++) {
-      for (let c = 0; c < SIZE; c++) {
-        const p = omok.board[r][c];
-        if (p !== 0) {
-          drawStone(ctx, PAD + c * CELL, PAD + r * CELL, p);
-        }
-      }
-    }
-
-    // Last move marker
-    if (omok.lastMove) {
-      const { r, c } = omok.lastMove;
-      ctx.save();
-      ctx.strokeStyle = "#ec4899";
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.arc(PAD + c * CELL, PAD + r * CELL, 5.5, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // Winning 5-in-a-row highlight
-    if (omok.winLine && omok.winLine.length >= 5) {
-      const first = omok.winLine[0];
-      const last = omok.winLine[omok.winLine.length - 1];
-      ctx.save();
-      ctx.strokeStyle = "rgba(236, 72, 153, 0.85)";
-      ctx.lineWidth = 5;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(PAD + first[1] * CELL, PAD + first[0] * CELL);
-      ctx.lineTo(PAD + last[1] * CELL, PAD + last[0] * CELL);
-      ctx.stroke();
-      ctx.restore();
-    }
   }
 
   function drawStone(ctx, x, y, player) {
@@ -294,7 +192,6 @@
       grad.addColorStop(0.7, "#f3f4f6");
       grad.addColorStop(1, "#cbd5e1");
     }
-
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fillStyle = grad;
@@ -302,31 +199,96 @@
     ctx.restore();
   }
 
-  function resetBoard() {
-    omok.board = createEmptyBoard();
-    omok.turn = 1;
-    omok.gameOver = false;
-    omok.aiThinking = false;
-    omok.settling = false;
-    omok.movesCount = 0;
-    omok.lastMove = null;
-    omok.hoverCell = null;
-    omok.winLine = null;
-    omok.startedAtMs = Date.now();
-    hideOverlay();
-    drawBoard();
-    updateHud();
+  function myPvpSide() {
+    const user = omok.getUser ? omok.getUser() : null;
+    if (!user || !omok.pvpRoom) return 0;
+    if (Number(omok.pvpRoom.host_user_id) === Number(user.id)) return 1;
+    if (Number(omok.pvpRoom.guest_user_id) === Number(user.id)) return 2;
+    return 0;
   }
 
-  function startPracticeMatch() {
-    if (omok.activeRunId) {
-      if (omok.showToast) omok.showToast("진행 중인 오목 포인트 대국이 있습니다. 먼저 종료하거나 기권해 주세요.");
-      return;
+  function canLocalPlayerPlace() {
+    if (!omok.running || omok.gameOver) return false;
+    if (omok.mode === "practice") return !omok.aiThinking && omok.turn === 1;
+    if (omok.mode === "pvp") {
+      return Boolean(omok.pvpRoom && omok.pvpRoom.status === "playing" && !omok.pvpSending && omok.turn === myPvpSide());
     }
-    omok.mode = "practice";
-    omok.running = true;
-    resetBoard();
-    renderControls();
+    return false;
+  }
+
+  function drawBoard() {
+    const ctx = omok.ctx;
+    if (!ctx) return;
+
+    const bg = ctx.createLinearGradient(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    bg.addColorStop(0, "#f7d59c");
+    bg.addColorStop(1, "#e7b46c");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    ctx.strokeStyle = "rgba(92, 58, 22, 0.72)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < SIZE; i++) {
+      const pos = PAD + i * CELL;
+      ctx.beginPath();
+      ctx.moveTo(PAD, pos);
+      ctx.lineTo(CANVAS_SIZE - PAD, pos);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(pos, PAD);
+      ctx.lineTo(pos, CANVAS_SIZE - PAD);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "#5c3a16";
+    for (const [sr, sc] of STAR_POINTS) {
+      ctx.beginPath();
+      ctx.arc(PAD + sc * CELL, PAD + sr * CELL, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (canLocalPlayerPlace() && omok.hoverCell) {
+      const { r, c } = omok.hoverCell;
+      if (inBounds(r, c) && omok.board[r][c] === 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.42;
+        drawStone(ctx, PAD + c * CELL, PAD + r * CELL, omok.mode === "pvp" ? myPvpSide() : 1);
+        ctx.restore();
+      }
+    }
+
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const p = omok.board[r][c];
+        if (p !== 0) drawStone(ctx, PAD + c * CELL, PAD + r * CELL, p);
+      }
+    }
+
+    if (omok.lastMove) {
+      const { r, c } = omok.lastMove;
+      ctx.save();
+      ctx.strokeStyle = "#ec4899";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(PAD + c * CELL, PAD + r * CELL, 5.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (omok.winLine && omok.winLine.length >= 5) {
+      const first = omok.winLine[0];
+      const last = omok.winLine[omok.winLine.length - 1];
+      ctx.save();
+      ctx.strokeStyle = "rgba(236, 72, 153, 0.85)";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(PAD + first[1] * CELL, PAD + first[0] * CELL);
+      ctx.lineTo(PAD + last[1] * CELL, PAD + last[0] * CELL);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   function showOverlay(title, desc, btnText, onBtn) {
@@ -345,176 +307,283 @@
     if (box) box.classList.add("hidden");
   }
 
-  async function finishMatch(result) {
+  function startPracticeMatch() {
+    if (omok.pvpRoom && (omok.pvpRoom.status === "waiting" || omok.pvpRoom.status === "playing")) {
+      if (omok.showToast) omok.showToast("진행 중인 1:1 대국실이 있어 먼저 취소하거나 기권해 주세요.");
+      return;
+    }
+    omok.mode = "practice";
+    omok.pvpRoom = null;
+    omok.board = createEmptyBoard();
+    omok.turn = 1;
+    omok.running = true;
+    omok.gameOver = false;
+    omok.aiThinking = false;
+    omok.movesCount = 0;
+    omok.lastMove = null;
+    omok.hoverCell = null;
+    omok.winLine = null;
+    hideOverlay();
+    drawBoard();
+    renderControls();
+  }
+
+  function switchToPvpTab() {
+    omok.mode = "pvp";
+    if (!omok.pvpRoom) {
+      omok.board = createEmptyBoard();
+      omok.running = false;
+      omok.gameOver = false;
+      omok.lastMove = null;
+      omok.winLine = null;
+      hideOverlay();
+      drawBoard();
+    }
+    renderControls();
+    refreshRoomsAndStats();
+  }
+
+  function finishAiPractice(result) {
     omok.gameOver = true;
     omok.running = false;
     omok.aiThinking = false;
     drawBoard();
     updateHud();
-
-    const durationSec = Math.max(1, Math.round((Date.now() - omok.startedAtMs) / 1000));
-    const titleMap = {
-      win: "🎉 승리했습니다!",
-      lose: "😢 AI가 승리했습니다",
-      draw: "🤝 무승부입니다",
-    };
-
-    if (omok.mode === "challenge" && omok.activeRunId && omok.apiHelper) {
-      omok.settling = true;
-      showOverlay("⏳ 대국 정산 중...", "결과를 서버에 기록하고 포인트를 정산 중입니다.", "잠시만요...", () => {});
-      try {
-        const res = await omok.apiHelper("/api/games/omok/finish", {
-          method: "POST",
-          body: {
-            run_id: omok.activeRunId,
-            result,
-            moves_count: omok.movesCount,
-            duration_sec: durationSec,
-          },
-        });
-        omok.activeRunId = null;
-        if (omok.onPointsChanged) omok.onPointsChanged(res.points);
-        const msg =
-          result === "win"
-            ? `${DIFF_LABELS[res.difficulty]} AI 승리! +${res.reward.toLocaleString()} P 획득 (순수익 +${res.net.toLocaleString()} P)`
-            : result === "draw"
-              ? `무승부로 참가비 ${res.reward.toLocaleString()} P가 환급되었습니다.`
-              : `아쉽게 패배해 참가비 ${res.stake.toLocaleString()} P를 잃었습니다.`;
-        showOverlay(titleMap[result], msg, "다시 도전하기", () => startChallengeMatch(false));
-        await refreshStatsAndLeaderboard();
-      } catch (err) {
-        showOverlay("정산 오류", err.message || "정산 중 오류가 발생했습니다.", "연습 모드로 전환", startPracticeMatch);
-      } finally {
-        omok.settling = false;
-        renderControls();
-      }
-      return;
-    }
-
-    const practiceMsg =
+    const title = result === "win" ? "🎉 AI 연습 승리!" : result === "draw" ? "🤝 무승부!" : "😢 AI 승리!";
+    const desc =
       result === "win"
-        ? `${DIFF_LABELS[omok.difficulty]} AI를 ${omok.movesCount}수 만에 이겼습니다!`
+        ? `${DIFF_LABELS[omok.difficulty]} AI를 ${omok.movesCount}수 만에 이겼습니다! (포인트 변동 없음)`
         : result === "draw"
           ? "빈 칸 없이 무승부로 끝났습니다."
-          : `${DIFF_LABELS[omok.difficulty]} AI에게 패배했습니다. 다시 도전해보세요!`;
-    showOverlay(titleMap[result], practiceMsg, "다시 연습하기", startPracticeMatch);
-    renderControls();
+          : `${DIFF_LABELS[omok.difficulty]} AI에게 패배했습니다. 다시 연습해보세요!`;
+    showOverlay(title, desc, "다시 연습하기", startPracticeMatch);
   }
 
-  function placeStone(r, c, player) {
+  function placeAiStone(r, c, player) {
     omok.board[r][c] = player;
     omok.movesCount += 1;
     omok.lastMove = { r, c };
     const win = checkWinAt(omok.board, r, c, player);
     if (win) {
       omok.winLine = win;
-      finishMatch(player === 1 ? "win" : "lose");
+      finishAiPractice(player === 1 ? "win" : "lose");
       return true;
     }
     if (omok.movesCount >= SIZE * SIZE) {
-      finishMatch("draw");
+      finishAiPractice("draw");
       return true;
     }
     return false;
   }
 
-  function handlePlayerClick(r, c) {
-    if (!omok.running || omok.gameOver || omok.aiThinking || omok.turn !== 1) return;
+  async function handleBoardClick(r, c) {
+    if (!canLocalPlayerPlace()) return;
     if (!inBounds(r, c) || omok.board[r][c] !== 0) return;
 
-    const ended = placeStone(r, c, 1);
-    if (ended) return;
+    if (omok.mode === "practice") {
+      if (placeAiStone(r, c, 1)) return;
+      omok.turn = 2;
+      omok.aiThinking = true;
+      drawBoard();
+      updateHud();
+      setTimeout(() => {
+        if (omok.mode !== "practice" || !omok.running || omok.gameOver) return;
+        const move = pickAiMove();
+        omok.aiThinking = false;
+        if (!move) {
+          finishAiPractice("draw");
+          return;
+        }
+        if (!placeAiStone(move.r, move.c, 2)) {
+          omok.turn = 1;
+          drawBoard();
+          updateHud();
+        }
+      }, 200);
+      return;
+    }
 
-    omok.turn = 2;
-    omok.aiThinking = true;
-    drawBoard();
-    updateHud();
-
-    setTimeout(() => {
-      if (!omok.running || omok.gameOver) return;
-      const move = pickAiMove();
-      omok.aiThinking = false;
-      if (!move) {
-        finishMatch("draw");
-        return;
+    // PvP server move
+    if (omok.mode === "pvp" && omok.pvpRoom && omok.apiHelper) {
+      omok.pvpSending = true;
+      try {
+        const updated = await omok.apiHelper(`/api/games/omok/rooms/${omok.pvpRoom.id}/move`, {
+          method: "POST",
+          body: { r, c },
+        });
+        applyPvpRoomState(updated);
+      } catch (err) {
+        if (omok.showToast) omok.showToast(err.message);
+      } finally {
+        omok.pvpSending = false;
       }
-      const aiEnded = placeStone(move.r, move.c, 2);
-      if (!aiEnded) {
-        omok.turn = 1;
-        drawBoard();
-        updateHud();
-      }
-    }, 220);
+    }
   }
 
-  async function startChallengeMatch(forfeitExisting = false) {
+  function applyPvpRoomState(room) {
+    if (!room) return;
+    const prevStatus = omok.pvpRoom ? omok.pvpRoom.status : null;
+    omok.pvpRoom = room;
+    omok.mode = "pvp";
+    omok.board = room.board || createEmptyBoard();
+    omok.turn = Number(room.turn || 1);
+    omok.movesCount = Number(room.moves_count || 0);
+    omok.lastMove = room.last_move || null;
+    omok.winLine = room.win_line || null;
+    omok.running = room.status === "playing";
+    omok.gameOver = room.status === "finished" || room.status === "cancelled";
+
+    if (typeof room.my_points === "number" && omok.onPointsChanged) {
+      omok.onPointsChanged(room.my_points);
+    }
+
+    drawBoard();
+    renderControls();
+
+    if (room.status === "waiting") {
+      showOverlay(
+        "⏳ 상대방 대기 중...",
+        `참가비 ${Number(room.stake).toLocaleString()}P 방이 열렸습니다. 다른 유저가 참가하면 자동으로 시작됩니다.`,
+        "❌ 대기 취소 (100% 환급)",
+        cancelPvpRoom
+      );
+    } else if (room.status === "playing") {
+      hideOverlay();
+      if (prevStatus === "waiting" && omok.showToast) {
+        omok.showToast(`${room.guest_nickname || "상대방"}님이 입장했습니다! 대국 시작!`);
+      }
+    } else if (room.status === "finished") {
+      const user = omok.getUser ? omok.getUser() : null;
+      const myId = user ? Number(user.id) : 0;
+      const reasonMap = { five: "5목 완성", timeout: "상대 시간 초과", resign: "상대 기권", draw: "무승부" };
+      let title = "대국 종료";
+      let desc = "";
+      if (room.winner_user_id == null) {
+        title = "🤝 무승부!";
+        desc = `참가비 ${Number(room.stake).toLocaleString()}P가 환급되었습니다.`;
+      } else if (Number(room.winner_user_id) === myId) {
+        title = "🎉 1:1 승리!";
+        desc = `${reasonMap[room.end_reason] || "승리"}! +${(Number(room.stake) * 2).toLocaleString()}P 획득!`;
+      } else {
+        title = "😢 아쉽게 패배...";
+        desc = `${room.end_reason === "timeout" ? "시간 초과" : room.end_reason === "resign" ? "기권" : "상대 5목 완성"}로 패배했습니다.`;
+      }
+      showOverlay(title, desc, "대국실 로비로 돌아가기", () => {
+        omok.pvpRoom = null;
+        omok.board = createEmptyBoard();
+        omok.winLine = null;
+        omok.lastMove = null;
+        hideOverlay();
+        drawBoard();
+        renderControls();
+        refreshRoomsAndStats();
+      });
+      if (prevStatus === "playing") refreshRoomsAndStats();
+    }
+  }
+
+  async function createPvpRoom() {
     const user = omok.getUser ? omok.getUser() : null;
     if (!user) {
-      if (omok.showToast) omok.showToast("포인트 도전은 로그인 후 이용할 수 있습니다.");
+      if (omok.showToast) omok.showToast("1:1 대국실은 로그인 후 이용할 수 있습니다.");
       return;
     }
     try {
-      const res = await omok.apiHelper("/api/games/omok/start", {
+      const room = await omok.apiHelper("/api/games/omok/rooms", {
         method: "POST",
-        body: { difficulty: omok.difficulty, forfeit_existing: forfeitExisting },
+        body: { stake: omok.selectedStake },
       });
-      omok.mode = "challenge";
-      omok.activeRunId = res.run_id;
-      omok.running = true;
-      if (omok.onPointsChanged) omok.onPointsChanged(res.points);
-      resetBoard();
-      renderControls();
-      if (omok.showToast) {
-        omok.showToast(`오목 AI(${DIFF_LABELS[omok.difficulty]}) 도전 시작! 승리 시 ${DIFF_REWARDS[omok.difficulty].toLocaleString()}P 획득!`);
-      }
-      await refreshStatsAndLeaderboard();
-    } catch (err) {
-      if (err.message && err.message.includes("진행 중인 오목 대국")) {
-        if (window.confirm("이미 진행 중인 오목 대국이 있습니다. 기존 대국을 기권하고 새로 시작할까요? (기존 참가비는 반환되지 않습니다)")) {
-          await startChallengeMatch(true);
-        }
-      } else if (omok.showToast) {
-        omok.showToast(err.message);
-      }
-    }
-  }
-
-  async function forfeitActiveMatch() {
-    if (!omok.activeRunId || !omok.apiHelper) return;
-    const stake = DIFF_STAKES[omok.difficulty] || 100;
-    if (!window.confirm(`정말 현재 대국을 기권할까요? 참가비 ${stake.toLocaleString()}P는 반환되지 않습니다.`)) return;
-    try {
-      await omok.apiHelper("/api/games/omok/forfeit", {
-        method: "POST",
-        body: { run_id: omok.activeRunId },
-      });
-      omok.activeRunId = null;
-      omok.running = false;
-      omok.gameOver = true;
-      if (omok.showToast) omok.showToast("오목 대국을 기권했습니다.");
-      startPracticeMatch();
-      await refreshStatsAndLeaderboard();
+      applyPvpRoomState(room);
+      if (omok.showToast) omok.showToast(`${omok.selectedStake.toLocaleString()}P 1:1 대국실을 만들었습니다!`);
     } catch (err) {
       if (omok.showToast) omok.showToast(err.message);
     }
+  }
+
+  async function joinPvpRoom(roomId) {
+    const user = omok.getUser ? omok.getUser() : null;
+    if (!user) {
+      if (omok.showToast) omok.showToast("1:1 대국실 참가는 로그인 후 이용할 수 있습니다.");
+      return;
+    }
+    try {
+      const room = await omok.apiHelper(`/api/games/omok/rooms/${roomId}/join`, { method: "POST" });
+      applyPvpRoomState(room);
+    } catch (err) {
+      if (omok.showToast) omok.showToast(err.message);
+      refreshRoomsAndStats();
+    }
+  }
+
+  async function cancelPvpRoom() {
+    if (!omok.pvpRoom || !omok.apiHelper) return;
+    try {
+      const res = await omok.apiHelper(`/api/games/omok/rooms/${omok.pvpRoom.id}/cancel`, { method: "POST" });
+      if (typeof res.points === "number" && omok.onPointsChanged) omok.onPointsChanged(res.points);
+      omok.pvpRoom = null;
+      omok.board = createEmptyBoard();
+      hideOverlay();
+      drawBoard();
+      renderControls();
+      if (omok.showToast) omok.showToast("대국실이 취소되어 참가비가 100% 환급되었습니다.");
+      refreshRoomsAndStats();
+    } catch (err) {
+      if (omok.showToast) omok.showToast(err.message);
+    }
+  }
+
+  async function resignPvpRoom() {
+    if (!omok.pvpRoom || omok.pvpRoom.status !== "playing" || !omok.apiHelper) return;
+    if (!window.confirm("정말 1:1 대국을 기권할까요? 상대방이 승리하게 됩니다.")) return;
+    try {
+      const updated = await omok.apiHelper(`/api/games/omok/rooms/${omok.pvpRoom.id}/resign`, { method: "POST" });
+      applyPvpRoomState(updated);
+    } catch (err) {
+      if (omok.showToast) omok.showToast(err.message);
+    }
+  }
+
+  function remainingSecondsText() {
+    if (!omok.pvpRoom || omok.pvpRoom.status !== "playing" || !omok.pvpRoom.turn_deadline) return "";
+    const dl = Date.parse(omok.pvpRoom.turn_deadline);
+    if (Number.isNaN(dl)) return "";
+    const sec = Math.max(0, Math.ceil((dl - Date.now()) / 1000));
+    return ` · ⏱️ ${sec}초`;
   }
 
   function updateHud() {
     const turnEl = document.getElementById("omok-turn-status");
     const movesEl = document.getElementById("omok-moves-count");
     const modeEl = document.getElementById("omok-mode-status");
-    if (turnEl) {
-      if (omok.gameOver) turnEl.textContent = "대국 종료";
-      else if (omok.aiThinking) turnEl.textContent = "⚪ AI 생각 중...";
-      else turnEl.textContent = omok.turn === 1 ? "⚫ 내 차례 (흑돌)" : "⚪ AI 차례 (백돌)";
+
+    if (omok.mode === "practice") {
+      if (turnEl) {
+        if (omok.gameOver) turnEl.textContent = "연습 종료";
+        else if (omok.aiThinking) turnEl.textContent = "⚪ AI 생각 중...";
+        else turnEl.textContent = omok.turn === 1 ? "⚫ 내 차례 (흑돌)" : "⚪ AI 차례 (백돌)";
+      }
+      if (movesEl) movesEl.textContent = `${omok.movesCount}수`;
+      if (modeEl) modeEl.textContent = `🤖 무료 연습 (${DIFF_LABELS[omok.difficulty]} AI)`;
+      return;
     }
-    if (movesEl) movesEl.textContent = `${omok.movesCount}수`;
+
+    const r = omok.pvpRoom;
+    if (!r) {
+      if (turnEl) turnEl.textContent = "대기 중";
+      if (movesEl) movesEl.textContent = "0수";
+      if (modeEl) modeEl.textContent = "⚔️ 방을 만들거나 대기 중인 대국실에 참가하세요!";
+      return;
+    }
+
+    const side = myPvpSide();
+    if (turnEl) {
+      if (r.status === "waiting") turnEl.textContent = "⏳ 상대 입장 대기";
+      else if (r.status === "finished") turnEl.textContent = "대국 종료";
+      else turnEl.textContent = Number(r.turn) === side ? "🔥 내 차례!" : "⏳ 상대 차례";
+    }
+    if (movesEl) movesEl.textContent = `${omok.movesCount}수${remainingSecondsText()}`;
     if (modeEl) {
-      const reward = DIFF_REWARDS[omok.difficulty];
-      modeEl.textContent =
-        omok.mode === "challenge" && omok.activeRunId
-          ? `🔥 포인트 도전 중 (${DIFF_LABELS[omok.difficulty]} · 승리 보상 ${reward.toLocaleString()}P)`
-          : `무료 연습 (${DIFF_LABELS[omok.difficulty]} AI)`;
+      modeEl.textContent = `⚫ ${r.host_nickname} vs ⚪ ${r.guest_nickname || "대기중"} (${Number(r.stake).toLocaleString()}P 방)`;
     }
   }
 
@@ -523,24 +592,37 @@
     const ptsEl = document.getElementById("omok-my-points");
     if (ptsEl) ptsEl.textContent = user ? `보유: ${user.points.toLocaleString()} P` : "로그인 필요";
 
+    const practiceBtn = document.getElementById("omok-practice-btn");
+    const pvpBtn = document.getElementById("omok-pvp-tab-btn");
+    const aiCtrl = document.getElementById("omok-ai-controls");
+    const pvpCtrl = document.getElementById("omok-pvp-controls");
+
+    if (practiceBtn) practiceBtn.classList.toggle("active", omok.mode === "practice");
+    if (pvpBtn) pvpBtn.classList.toggle("active", omok.mode === "pvp");
+    if (aiCtrl) aiCtrl.classList.toggle("hidden", omok.mode !== "practice");
+    if (pvpCtrl) pvpCtrl.classList.toggle("hidden", omok.mode !== "pvp");
+
     document.querySelectorAll(".omok-diff-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.diff === omok.difficulty);
-      btn.disabled = Boolean(omok.activeRunId);
+    });
+    document.querySelectorAll(".omok-pvp-stake-btn").forEach((btn) => {
+      btn.classList.toggle("active", Number(btn.dataset.stake) === omok.selectedStake);
+      btn.disabled = Boolean(omok.pvpRoom && (omok.pvpRoom.status === "waiting" || omok.pvpRoom.status === "playing"));
     });
 
-    const practiceBtn = document.getElementById("omok-practice-btn");
-    const startBtn = document.getElementById("omok-start-challenge-btn");
+    const createBtn = document.getElementById("omok-create-room-btn");
+    const cancelBtn = document.getElementById("omok-cancel-room-btn");
     const forfeitBtn = document.getElementById("omok-forfeit-btn");
-    if (practiceBtn) practiceBtn.classList.toggle("active", omok.mode === "practice");
-    if (startBtn) {
-      startBtn.disabled = Boolean(omok.activeRunId);
-      const stake = DIFF_STAKES[omok.difficulty] || 100;
-      const reward = DIFF_REWARDS[omok.difficulty] || 200;
-      startBtn.textContent = omok.activeRunId
-        ? `대국 진행 중 (${DIFF_LABELS[omok.difficulty]})`
-        : `🔥 ${stake.toLocaleString()}P 걸고 도전 (승리 ${reward.toLocaleString()}P)`;
+    const inWaiting = Boolean(omok.pvpRoom && omok.pvpRoom.status === "waiting");
+    const inPlaying = Boolean(omok.pvpRoom && omok.pvpRoom.status === "playing");
+
+    if (createBtn) {
+      createBtn.classList.toggle("hidden", inWaiting || inPlaying);
+      createBtn.textContent = `➕ ${omok.selectedStake.toLocaleString()}P 방 만들기`;
     }
-    if (forfeitBtn) forfeitBtn.classList.toggle("hidden", !omok.activeRunId);
+    if (cancelBtn) cancelBtn.classList.toggle("hidden", !inWaiting);
+    if (forfeitBtn) forfeitBtn.classList.toggle("hidden", !inPlaying);
+
     updateHud();
   }
 
@@ -552,67 +634,117 @@
       .replace(/"/g, "&quot;");
   }
 
-  async function refreshStatsAndLeaderboard() {
+  async function refreshRoomsAndStats() {
     if (!omok.apiHelper) return;
     try {
-      const lb = await omok.apiHelper("/api/games/omok/leaderboard");
+      const data = await omok.apiHelper("/api/games/omok/rooms");
+      const user = omok.getUser ? omok.getUser() : null;
+      const myId = user ? Number(user.id) : 0;
+
+      if (data.my_room && (!omok.pvpRoom || omok.pvpRoom.status !== "finished")) {
+        applyPvpRoomState(data.my_room);
+      }
+
+      const waitEl = document.getElementById("omok-waiting-rooms");
+      if (waitEl) {
+        waitEl.innerHTML = "";
+        if (!data.waiting_rooms || data.waiting_rooms.length === 0) {
+          waitEl.innerHTML = '<div class="muted small">현재 대기 중인 1:1 방이 없습니다. 방을 만들어 보세요!</div>';
+        } else {
+          data.waiting_rooms.forEach((rm) => {
+            const item = document.createElement("div");
+            item.className = "list-item row-between";
+            const left = document.createElement("div");
+            left.innerHTML = `<strong>${escapeHtml(rm.host_nickname)}</strong> <span class="badge-pink">${Number(rm.stake).toLocaleString()}P</span>`;
+            item.appendChild(left);
+            if (Number(rm.host_user_id) === myId) {
+              const mine = document.createElement("span");
+              mine.className = "muted small";
+              mine.textContent = "내 방";
+              item.appendChild(mine);
+            } else {
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "btn btn-pink btn-sm";
+              btn.textContent = "⚔️ 참가";
+              btn.onclick = () => joinPvpRoom(rm.id);
+              item.appendChild(btn);
+            }
+            waitEl.appendChild(item);
+          });
+        }
+      }
+
       const lbEl = document.getElementById("omok-leaderboard");
       if (lbEl) {
         lbEl.innerHTML = "";
-        if (!lb.leaderboard || lb.leaderboard.length === 0) {
-          lbEl.innerHTML = '<div class="muted small">아직 포인트 대국 승리 기록이 없습니다. 첫 승리에 도전하세요!</div>';
+        if (!data.leaderboard || data.leaderboard.length === 0) {
+          lbEl.innerHTML = '<div class="muted small">아직 1:1 오목 승리 기록이 없습니다.</div>';
         } else {
-          lb.leaderboard.forEach((row, idx) => {
+          data.leaderboard.forEach((row, idx) => {
             const item = document.createElement("div");
             item.className = "list-item row-between";
-            item.innerHTML = `<span><strong>${idx + 1}. ${escapeHtml(row.nickname)}</strong> <span class="muted small">(${row.games_played}전)</span></span><span class="badge-pink">${row.wins}승</span>`;
+            item.innerHTML = `<span><strong>${idx + 1}. ${escapeHtml(row.nickname)}</strong></span><span class="badge-pink">${row.wins}승</span>`;
             lbEl.appendChild(item);
           });
         }
       }
 
-      const user = omok.getUser ? omok.getUser() : null;
-      const recordEl = document.getElementById("omok-my-record");
+      const recEl = document.getElementById("omok-my-record");
       const histEl = document.getElementById("omok-my-history");
-      if (!user) {
-        if (recordEl) recordEl.textContent = "-";
-        if (histEl) histEl.innerHTML = '<div class="muted small">로그인하면 내 대국 전적을 확인할 수 있습니다.</div>';
-        return;
-      }
-
-      const me = await omok.apiHelper("/api/games/omok/me");
-      if (recordEl) recordEl.textContent = `${me.wins}승 ${me.losses}패`;
-      if (me.active_run && !omok.activeRunId) {
-        omok.activeRunId = me.active_run.id;
-        omok.difficulty = me.active_run.difficulty || "normal";
-        omok.mode = "challenge";
-        omok.running = true;
-        resetBoard();
-      }
-
-      if (histEl) {
-        histEl.innerHTML = "";
-        if (!me.recent_runs || me.recent_runs.length === 0) {
-          histEl.innerHTML = '<div class="muted small">아직 포인트 대국 기록이 없습니다.</div>';
-        } else {
-          const resLabel = { win: "승리", lose: "패배", draw: "무승부", forfeited: "기권" };
-          me.recent_runs.forEach((r) => {
-            const item = document.createElement("div");
-            item.className = "list-item row-between";
-            const left = document.createElement("div");
-            left.innerHTML = `<strong>${resLabel[r.result] || r.result}</strong> <span class="muted small">· ${DIFF_LABELS[r.difficulty] || r.difficulty} AI (${r.moves_count}수)</span>`;
-            const right = document.createElement("span");
-            right.className = r.reward > 0 ? "badge-pink" : "muted small";
-            right.textContent = r.reward > 0 ? `+${Number(r.reward).toLocaleString()}P` : "0P";
-            item.appendChild(left);
-            item.appendChild(right);
-            histEl.appendChild(item);
-          });
+      if (!user || !data.my_stats) {
+        if (recEl) recEl.textContent = "-";
+        if (histEl) histEl.innerHTML = '<div class="muted small">로그인하면 내 1:1 전적을 확인할 수 있습니다.</div>';
+      } else {
+        if (recEl) recEl.textContent = `${data.my_stats.wins}승 ${data.my_stats.losses}패`;
+        if (histEl) {
+          histEl.innerHTML = "";
+          if (!data.recent_matches || data.recent_matches.length === 0) {
+            histEl.innerHTML = '<div class="muted small">아직 1:1 대국 기록이 없습니다.</div>';
+          } else {
+            data.recent_matches.forEach((m) => {
+              const isWin = Number(m.winner_user_id) === myId;
+              const isDraw = m.winner_user_id == null;
+              const opp = Number(m.host_user_id) === myId ? m.guest_nickname : m.host_nickname;
+              const item = document.createElement("div");
+              item.className = "list-item row-between";
+              const resText = isDraw ? "무승부" : isWin ? "승리" : "패배";
+              const ptsText = isDraw ? `${m.stake}P 환급` : isWin ? `+${(m.stake * 2).toLocaleString()}P` : `-${m.stake}P`;
+              item.innerHTML = `<span><strong>${resText}</strong> <span class="muted small">vs ${escapeHtml(opp || "상대")}</span></span><span class="${isWin ? "badge-pink" : "muted small"}">${ptsText}</span>`;
+              histEl.appendChild(item);
+            });
+          }
         }
       }
-      renderControls();
     } catch (_) {
-      // Ignore transient error
+      // Ignore transient polling error
+    }
+  }
+
+  function startTimers() {
+    if (!omok.pollTimer) {
+      omok.pollTimer = setInterval(async () => {
+        const page = document.getElementById("page-game");
+        const panel = document.getElementById("game-panel-omok");
+        if (!page || !page.classList.contains("active") || !panel || panel.classList.contains("hidden")) return;
+
+        if (omok.pvpRoom && (omok.pvpRoom.status === "waiting" || omok.pvpRoom.status === "playing")) {
+          try {
+            const updated = await omok.apiHelper(`/api/games/omok/rooms/${omok.pvpRoom.id}`);
+            applyPvpRoomState(updated);
+          } catch (_) {}
+        } else if (omok.mode === "pvp") {
+          refreshRoomsAndStats();
+        }
+      }, 1500);
+    }
+
+    if (!omok.countdownTimer) {
+      omok.countdownTimer = setInterval(() => {
+        if (omok.mode === "pvp" && omok.pvpRoom && omok.pvpRoom.status === "playing") {
+          updateHud();
+        }
+      }, 500);
     }
   }
 
@@ -620,9 +752,7 @@
     const rect = canvas.getBoundingClientRect();
     const x = ((clientX - rect.left) / rect.width) * CANVAS_SIZE;
     const y = ((clientY - rect.top) / rect.height) * CANVAS_SIZE;
-    const c = Math.round((x - PAD) / CELL);
-    const r = Math.round((y - PAD) / CELL);
-    return { r, c };
+    return { r: Math.round((y - PAD) / CELL), c: Math.round((x - PAD) / CELL) };
   }
 
   function initPage({ api, getUser, onPointsChanged, showToast }) {
@@ -654,31 +784,37 @@
       });
       canvas.addEventListener("click", (e) => {
         const cell = eventToCell(canvas, e.clientX, e.clientY);
-        handlePlayerClick(cell.r, cell.c);
+        handleBoardClick(cell.r, cell.c);
       });
+
+      document.getElementById("omok-practice-btn")?.addEventListener("click", startPracticeMatch);
+      document.getElementById("omok-pvp-tab-btn")?.addEventListener("click", switchToPvpTab);
+      document.getElementById("omok-ai-restart-btn")?.addEventListener("click", startPracticeMatch);
+      document.getElementById("omok-create-room-btn")?.addEventListener("click", createPvpRoom);
+      document.getElementById("omok-cancel-room-btn")?.addEventListener("click", cancelPvpRoom);
+      document.getElementById("omok-forfeit-btn")?.addEventListener("click", resignPvpRoom);
+      document.getElementById("omok-refresh-rooms-btn")?.addEventListener("click", refreshRoomsAndStats);
 
       document.querySelectorAll(".omok-diff-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
-          if (omok.activeRunId) return;
           omok.difficulty = btn.dataset.diff;
           renderControls();
         });
       });
 
-      const practiceBtn = document.getElementById("omok-practice-btn");
-      if (practiceBtn) practiceBtn.addEventListener("click", startPracticeMatch);
-
-      const startBtn = document.getElementById("omok-start-challenge-btn");
-      if (startBtn) startBtn.addEventListener("click", () => startChallengeMatch(false));
-
-      const forfeitBtn = document.getElementById("omok-forfeit-btn");
-      if (forfeitBtn) forfeitBtn.addEventListener("click", forfeitActiveMatch);
+      document.querySelectorAll(".omok-pvp-stake-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          omok.selectedStake = Number(btn.dataset.stake);
+          renderControls();
+        });
+      });
 
       startPracticeMatch();
+      startTimers();
     }
 
     renderControls();
-    refreshStatsAndLeaderboard();
+    refreshRoomsAndStats();
   }
 
   window.ChaeonOmok = { initPage };

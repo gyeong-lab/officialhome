@@ -581,8 +581,8 @@
       <div id="game-panel-omok" class="hidden">
         <div class="page-head">
           <div>
-            <h1>⚫⚪ 체온 오목 (AI 대결)</h1>
-            <p class="muted">15×15 오목판에서 AI와 대결해 5목을 완성하세요! 난이도별로 포인트 보상을 받을 수 있습니다.</p>
+            <h1>⚫⚪ 체온 오목</h1>
+            <p class="muted">혼자서는 AI와 무료 연습하고, 포인트 대결은 다른 유저와 1:1 대국실에서 승부하세요!</p>
           </div>
           <div class="row-gap">
             <span class="badge-pink" id="omok-my-points">로그인 필요</span>
@@ -593,13 +593,24 @@
           <div class="card suika-main-card">
             <div class="suika-mode-bar">
               <div class="row-gap" style="flex-wrap:wrap">
-                <button type="button" class="pill active" id="omok-practice-btn">🎮 무료 연습</button>
-                <button type="button" class="pill omok-diff-btn" data-diff="easy">쉬움 (100P→200P)</button>
-                <button type="button" class="pill omok-diff-btn active" data-diff="normal">보통 (300P→700P)</button>
-                <button type="button" class="pill omok-diff-btn" data-diff="hard">어려움 (500P→1,500P)</button>
+                <button type="button" class="pill active" id="omok-practice-btn">🤖 무료 연습 (AI)</button>
+                <button type="button" class="pill" id="omok-pvp-tab-btn">⚔️ 1:1 유저 대결</button>
               </div>
-              <div class="row-gap" style="flex-wrap:wrap">
-                <button type="button" class="btn btn-pink btn-sm" id="omok-start-challenge-btn">🔥 300P 걸고 도전 (승리 700P)</button>
+
+              <div id="omok-ai-controls" class="row-gap" style="flex-wrap:wrap">
+                <span class="muted small">AI 난이도:</span>
+                <button type="button" class="pill omok-diff-btn" data-diff="easy">쉬움</button>
+                <button type="button" class="pill omok-diff-btn active" data-diff="normal">보통</button>
+                <button type="button" class="pill omok-diff-btn" data-diff="hard">어려움</button>
+                <button type="button" class="btn btn-outline btn-sm" id="omok-ai-restart-btn">새 판</button>
+              </div>
+
+              <div id="omok-pvp-controls" class="row-gap hidden" style="flex-wrap:wrap">
+                <button type="button" class="pill omok-pvp-stake-btn active" data-stake="100">100P 방</button>
+                <button type="button" class="pill omok-pvp-stake-btn" data-stake="300">300P 방</button>
+                <button type="button" class="pill omok-pvp-stake-btn" data-stake="500">500P 방</button>
+                <button type="button" class="btn btn-pink btn-sm" id="omok-create-room-btn">➕ 100P 방 만들기</button>
+                <button type="button" class="btn btn-outline btn-sm hidden" id="omok-cancel-room-btn">❌ 대기 취소 (환급)</button>
                 <button type="button" class="btn btn-outline btn-sm hidden" id="omok-forfeit-btn">🏳️ 기권</button>
               </div>
             </div>
@@ -610,7 +621,7 @@
                 <strong id="omok-turn-status">⚫ 내 차례 (흑돌)</strong>
               </div>
               <div class="suika-hud-box">
-                <span class="muted small">진행 수</span>
+                <span class="muted small">진행 수 / 제한시간</span>
                 <strong id="omok-moves-count">0수</strong>
               </div>
               <div class="suika-hud-box suika-hud-wide">
@@ -625,7 +636,7 @@
                 <div class="suika-overlay-card">
                   <h3 id="omok-overlay-title">대국 종료</h3>
                   <p id="omok-overlay-desc" class="muted"></p>
-                  <button type="button" class="btn btn-pink" id="omok-overlay-btn">다시하기</button>
+                  <button type="button" class="btn btn-pink" id="omok-overlay-btn">확인</button>
                 </div>
               </div>
             </div>
@@ -634,25 +645,33 @@
 
           <div class="suika-side">
             <div class="card">
-              <h3>🏆 오목 AI 도전 보상표</h3>
-              <p class="muted small mt-6">난이도별 참가비를 걸고 AI에게 승리하면 보상을 받습니다. (무승부 시 참가비 환급)</p>
+              <div class="row-between">
+                <h3>⚔️ 1:1 대기 중인 대국실</h3>
+                <button type="button" class="btn btn-outline btn-sm" id="omok-refresh-rooms-btn">새로고침</button>
+              </div>
+              <div id="omok-waiting-rooms" class="list-stack mt-12"></div>
+            </div>
+
+            <div class="card">
+              <h3>🏆 1:1 대결 보상 규칙</h3>
+              <p class="muted small mt-6">참가비를 걸고 1:1 대국에서 승리하면 양쪽 참가비를 합산해 <strong>2배</strong>를 획득합니다. (한 수 45초 제한 · 무승부 환급)</p>
               <div class="list-stack mt-12">
-                <div class="list-item row-between"><span>쉬움 AI (참가비 100P)</span><span class="badge-pink">승리 200 P (+100P)</span></div>
-                <div class="list-item row-between"><span>보통 AI (참가비 300P)</span><span class="badge-pink">승리 700 P (+400P)</span></div>
-                <div class="list-item row-between"><span>어려움 AI (참가비 500P)</span><span class="badge-pink">승리 1,500 P (+1,000P)</span></div>
+                <div class="list-item row-between"><span>100P 방 승리</span><span class="badge-pink">200 P (+100P)</span></div>
+                <div class="list-item row-between"><span>300P 방 승리</span><span class="badge-pink">600 P (+300P)</span></div>
+                <div class="list-item row-between"><span>500P 방 승리</span><span class="badge-pink">1,000 P (+500P)</span></div>
               </div>
             </div>
 
             <div class="card">
               <div class="row-between">
-                <h3>👑 오목 다승 랭킹 TOP 10</h3>
+                <h3>👑 1:1 오목 다승 랭킹</h3>
                 <span class="muted small">내 전적: <strong id="omok-my-record">-</strong></span>
               </div>
               <div id="omok-leaderboard" class="list-stack mt-12"></div>
             </div>
 
             <div class="card">
-              <h3>📜 내 최근 오목 대국</h3>
+              <h3>📜 내 최근 1:1 대국</h3>
               <div id="omok-my-history" class="list-stack mt-12"></div>
             </div>
           </div>
@@ -854,7 +873,7 @@
 
   <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
   <script src="/static/suika.js?v=20261122b"></script>
-  <script src="/static/omok.js?v=20261122b"></script>
+  <script src="/static/omok.js?v=20261122c"></script>
   <script src="/static/app.js?v=20261122h"></script>
 </body>
 </html>

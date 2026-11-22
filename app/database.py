@@ -505,6 +505,25 @@ _PG_SCHEMA_STATEMENTS = [
         finished_at TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS omok_rooms (
+        id SERIAL PRIMARY KEY,
+        host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        guest_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        stake INTEGER NOT NULL CHECK(stake IN (100, 300, 500)),
+        status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting', 'playing', 'finished', 'cancelled')),
+        board_json TEXT NOT NULL,
+        turn INTEGER NOT NULL DEFAULT 1 CHECK(turn IN (1, 2)),
+        moves_count INTEGER NOT NULL DEFAULT 0,
+        last_move_json TEXT NOT NULL DEFAULT 'null',
+        win_line_json TEXT NOT NULL DEFAULT 'null',
+        winner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        end_reason TEXT NOT NULL DEFAULT '',
+        turn_deadline TEXT,
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+    )
+    """,
 ]
 
 
@@ -787,6 +806,24 @@ def init_db() -> None:
                 moves_count INTEGER NOT NULL DEFAULT 0 CHECK(moves_count >= 0),
                 duration_sec INTEGER NOT NULL DEFAULT 0 CHECK(duration_sec >= 0),
                 reward INTEGER NOT NULL DEFAULT 0 CHECK(reward >= 0),
+                created_at TEXT NOT NULL,
+                finished_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS omok_rooms (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                guest_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                stake INTEGER NOT NULL CHECK(stake IN (100, 300, 500)),
+                status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting', 'playing', 'finished', 'cancelled')),
+                board_json TEXT NOT NULL,
+                turn INTEGER NOT NULL DEFAULT 1 CHECK(turn IN (1, 2)),
+                moves_count INTEGER NOT NULL DEFAULT 0,
+                last_move_json TEXT NOT NULL DEFAULT 'null',
+                win_line_json TEXT NOT NULL DEFAULT 'null',
+                winner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                end_reason TEXT NOT NULL DEFAULT '',
+                turn_deadline TEXT,
                 created_at TEXT NOT NULL,
                 finished_at TEXT
             );

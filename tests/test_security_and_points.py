@@ -468,6 +468,65 @@ class SecurityAndPointsTests(unittest.TestCase):
         self.assertEqual(s_lb, 200)
         self.assertTrue(any(r["nickname"] == "오목고수" and r["wins"] == 1 for r in lb_data["leaderboard"]))
 
+    def test_omok_pvp_rooms_and_settlement(self) -> None:
+        host = ApiClient(self.base_url)
+        _, h_reg = host.request(
+            "POST",
+            "/api/auth/register",
+            {"username": "pvphost", "nickname": "흑돌방장", "password": "Password!123"},
+        )
+        host.csrf_token = h_reg["csrf_token"]
+        host_id = h_reg["user"]["id"]
+
+        guest = ApiClient(self.base_url)
+        _, g_reg = guest.request(
+            "POST",
+            "/api/auth/register",
+            {"username": "pvpguest", "nickname": "백돌도전자", "password": "Password!123"},
+        )
+        guest.csrf_token = g_reg["csrf_token"]
+
+        # Create and cancel a waiting 300P room -> full refund
+        s_c1, r1 = host.request("POST", "/api/games/omok/rooms", {"stake": 300})
+        self.assertEqual(s_c1, 200)
+        self.assertEqual(r1["my_points"], 1700)
+        s_can, can_data = host.request("POST", f"/api/games/omok/rooms/{r1['id']}/cancel")
+        self.assertEqual(s_can, 200)
+        self.assertEqual(can_data["points"], 2000)
+
+        # Create 300P room and guest joins -> both at 1700P
+        s_c2, r2 = host.request("POST", "/api/games/omok/rooms", {"stake": 300})
+        self.assertEqual(s_c2, 200)
+        rid = r2["id"]
+        s_join, j_data = guest.request("POST", f"/api/games/omok/rooms/{rid}/join")
+        self.assertEqual(s_join, 200)
+        self.assertEqual(j_data["status"], "playing")
+        self.assertEqual(j_data["my_points"], 1700)
+
+        # Guest cannot move on turn 1 (host's turn)
+        s_oob, _ = guest.request("POST", f"/api/games/omok/rooms/{rid}/move", {"r": 7, "c": 7})
+        self.assertEqual(s_oob, 400)
+
+        # Play alternating moves: host builds (7,3..7) -> wins on 5th move!
+        for c in range(3, 7):
+            s_hm, _ = host.request("POST", f"/api/games/omok/rooms/{rid}/move", {"r": 7, "c": c})
+            self.assertEqual(s_hm, 200)
+            s_gm, _ = guest.request("POST", f"/api/games/omok/rooms/{rid}/move", {"r": 8, "c": c})
+            self.assertEqual(s_gm, 200)
+
+        # Winning move by host
+        s_win, w_data = host.request("POST", f"/api/games/omok/rooms/{rid}/move", {"r": 7, "c": 7})
+        self.assertEqual(s_win, 200)
+        self.assertEqual(w_data["status"], "finished")
+        self.assertEqual(w_data["end_reason"], "five")
+        self.assertEqual(w_data["winner_user_id"], host_id)
+        self.assertEqual(w_data["my_points"], 2300)
+
+        # PvP lobby leaderboard reflects host's win
+        s_rooms, rooms_data = host.request("GET", "/api/games/omok/rooms")
+        self.assertEqual(s_rooms, 200)
+        self.assertTrue(any(r["nickname"] == "흑돌방장" and r["wins"] == 1 for r in rooms_data["leaderboard"]))
+
 
 if __name__ == "__main__":
     unittest.main()

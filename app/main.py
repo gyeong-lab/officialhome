@@ -332,6 +332,15 @@ class OmokForfeitBody(BaseModel):
     run_id: int
 
 
+class OmokRoomCreateBody(BaseModel):
+    stake: int
+
+
+class OmokRoomMoveBody(BaseModel):
+    r: int = Field(ge=0, le=14)
+    c: int = Field(ge=0, le=14)
+
+
 class PredictionCreateBody(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     options: list[str] = Field(min_length=2, max_length=10)
@@ -3393,6 +3402,441 @@ def forfeit_omok_challenge(
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="진행 중인 대국을 찾을 수 없습니다.")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Mini-Game: Omok 1:1 PvP Rooms (유저 대전)
+# ---------------------------------------------------------------------------
+
+OMOK_PVP_STAKES = (100, 300, 500)
+OMOK_TURN_SECONDS = 45
+_OMOK_DIRS = ((1, 0), (0, 1), (1, 1), (1, -1))
+
+
+def _empty_omok_board() -> list[list[int]]:
+    return [[0] * 15 for _ in range(15)]
+
+
+def _check_omok_win(board: list[list[int]], r: int, c: int, player: int) -> list[list[int]] | None:
+    for dr, dc in _OMOK_DIRS:
+        line = [[r, c]]
+        for step in range(1, 5):
+            nr, nc = r + dr * step, c + dc * step
+            if 0 <= nr < 15 and 0 <= nc < 15 and board[nr][nc] == player:
+                line.append([nr, nc])
+            else:
+                break
+        for step in range(1, 5):
+            nr, nc = r - dr * step, c - dc * step
+            if 0 <= nr < 15 and 0 <= nc < 15 and board[nr][nc] == player:
+                line.insert(0, [nr, nc])
+            else:
+                break
+        if len(line) >= 5:
+            return line
+    return None
+
+
+def _omok_room_payload(conn, room_row, current_user_id: int | None = None) -> dict:
+    r = dict(room_row)
+    host = conn.execute("SELECT nickname FROM users WHERE id = ?", (r["host_user_id"],)).fetchone()
+    guest = (
+        conn.execute("SELECT nickname FROM users WHERE id = ?", (r["guest_user_id"],)).fetchone()
+        if r.get("guest_user_id")
+        else None
+    )
+    my_points = None
+    if current_user_id is not None:
+        u = conn.execute("SELECT points FROM users WHERE id = ?", (current_user_id,)).fetchone()
+        my_points = int(u["points"]) if u else None
+    return {
+        "id": r["id"],
+        "host_user_id": r["host_user_id"],
+        "host_nickname": host["nickname"] if host else "호스트",
+        "guest_user_id": r["guest_user_id"],
+        "guest_nickname": guest["nickname"] if guest else None,
+        "stake": int(r["stake"]),
+        "status": r["status"],
+        "board": json.loads(r["board_json"]),
+        "turn": int(r["turn"]),
+        "moves_count": int(r["moves_count"]),
+        "last_move": json.loads(r["last_move_json"] or "null"),
+        "win_line": json.loads(r["win_line_json"] or "null"),
+        "winner_user_id": r["winner_user_id"],
+        "end_reason": r["end_reason"] or "",
+        "turn_deadline": r["turn_deadline"],
+        "server_now": utc_now_iso(),
+        "created_at": r["created_at"],
+        "finished_at": r["finished_at"],
+        "my_points": my_points,
+    }
+
+
+def _settle_omok_room(
+    conn,
+    room_row,
+    winner_user_id: int | None,
+    end_reason: str,
+    win_line: list[list[int]] | None = None,
+) -> bool:
+    now = utc_now_iso()
+    room_id = room_row["id"]
+    cur = conn.execute(
+        """
+        UPDATE omok_rooms
+        SET status = 'finished',
+            winner_user_id = ?,
+            end_reason = ?,
+            win_line_json = ?,
+            finished_at = ?
+        WHERE id = ? AND status = 'playing'
+        """,
+        (winner_user_id, end_reason, json.dumps(win_line), now, room_id),
+    )
+    if cur.rowcount == 0:
+        return False
+
+    stake = int(room_row["stake"])
+    if winner_user_id is not None:
+        pot = stake * 2
+        apply_point_delta(
+            conn,
+            winner_user_id,
+            pot,
+            f"오목 1:1 대국 승리 보상 (+{pot:,}P)",
+            "omok_reward",
+            idempotency_key=f"omok_pvp:win:{room_id}",
+        )
+    else:
+        for uid in (room_row["host_user_id"], room_row["guest_user_id"]):
+            if uid:
+                apply_point_delta(
+                    conn,
+                    uid,
+                    stake,
+                    f"오목 1:1 무승부 환급 (+{stake:,}P)",
+                    "omok_reward",
+                    idempotency_key=f"omok_pvp:draw:{room_id}:{uid}",
+                )
+    return True
+
+
+def _maybe_expire_omok_room(conn, room_row):
+    if not room_row or room_row["status"] != "playing" or not room_row["turn_deadline"]:
+        return room_row
+    try:
+        dl = datetime.fromisoformat(room_row["turn_deadline"])
+        if dl.tzinfo is None:
+            dl = dl.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) >= dl:
+            turn = int(room_row["turn"])
+            winner_id = room_row["guest_user_id"] if turn == 1 else room_row["host_user_id"]
+            _settle_omok_room(conn, room_row, winner_id, "timeout")
+            return conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_row["id"],)).fetchone()
+    except Exception:
+        pass
+    return room_row
+
+
+@app.get("/api/games/omok/rooms")
+def list_omok_pvp_rooms(session: dict | None = Depends(get_current_session)):
+    uid = session["id"] if session else None
+    with transaction() as conn:
+        waiting = conn.execute(
+            """
+            SELECT r.id, r.host_user_id, u.nickname AS host_nickname, r.stake, r.created_at
+            FROM omok_rooms r
+            JOIN users u ON u.id = r.host_user_id
+            WHERE r.status = 'waiting'
+            ORDER BY r.id DESC
+            LIMIT 20
+            """
+        ).fetchall()
+
+        my_room = None
+        if uid is not None:
+            row = conn.execute(
+                """
+                SELECT * FROM omok_rooms
+                WHERE (host_user_id = ? OR guest_user_id = ?) AND status IN ('waiting', 'playing')
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (uid, uid),
+            ).fetchone()
+            if row:
+                row = _maybe_expire_omok_room(conn, row)
+                if row and row["status"] in ("waiting", "playing"):
+                    my_room = _omok_room_payload(conn, row, uid)
+
+        lb = conn.execute(
+            """
+            SELECT u.id AS user_id,
+                   u.nickname,
+                   COUNT(*) AS wins,
+                   COALESCE(SUM(r.stake * 2), 0) AS total_won
+            FROM omok_rooms r
+            JOIN users u ON u.id = r.winner_user_id
+            WHERE r.status = 'finished' AND r.winner_user_id IS NOT NULL
+            GROUP BY u.id, u.nickname
+            ORDER BY wins DESC, total_won DESC
+            LIMIT 10
+            """
+        ).fetchall()
+
+        my_stats = None
+        recent_matches = []
+        if uid is not None:
+            s_row = conn.execute(
+                """
+                SELECT SUM(CASE WHEN winner_user_id = ? THEN 1 ELSE 0 END) AS wins,
+                       SUM(CASE WHEN winner_user_id IS NOT NULL AND winner_user_id != ? THEN 1 ELSE 0 END) AS losses,
+                       SUM(CASE WHEN winner_user_id IS NULL THEN 1 ELSE 0 END) AS draws
+                FROM omok_rooms
+                WHERE status = 'finished' AND (host_user_id = ? OR guest_user_id = ?)
+                """,
+                (uid, uid, uid, uid),
+            ).fetchone()
+            my_stats = {
+                "wins": int(s_row["wins"] or 0) if s_row else 0,
+                "losses": int(s_row["losses"] or 0) if s_row else 0,
+                "draws": int(s_row["draws"] or 0) if s_row else 0,
+            }
+            rec_rows = conn.execute(
+                """
+                SELECT r.id, r.stake, r.host_user_id, r.guest_user_id, r.winner_user_id, r.end_reason, r.moves_count, r.finished_at,
+                       uh.nickname AS host_nickname, ug.nickname AS guest_nickname
+                FROM omok_rooms r
+                JOIN users uh ON uh.id = r.host_user_id
+                LEFT JOIN users ug ON ug.id = r.guest_user_id
+                WHERE r.status = 'finished' AND (r.host_user_id = ? OR r.guest_user_id = ?)
+                ORDER BY r.id DESC
+                LIMIT 10
+                """,
+                (uid, uid),
+            ).fetchall()
+            recent_matches = [dict(x) for x in rec_rows]
+
+    return {
+        "stakes": list(OMOK_PVP_STAKES),
+        "turn_seconds": OMOK_TURN_SECONDS,
+        "waiting_rooms": [dict(r) for r in waiting],
+        "my_room": my_room,
+        "leaderboard": [dict(r) for r in lb],
+        "my_stats": my_stats,
+        "recent_matches": recent_matches,
+    }
+
+
+@app.get("/api/games/omok/rooms/{room_id}")
+def get_omok_pvp_room(room_id: int, session: dict | None = Depends(get_current_session)):
+    uid = session["id"] if session else None
+    with transaction() as conn:
+        row = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="대국실을 찾을 수 없습니다.")
+        row = _maybe_expire_omok_room(conn, row)
+        return _omok_room_payload(conn, row, uid)
+
+
+@app.post("/api/games/omok/rooms")
+def create_omok_pvp_room(
+    body: OmokRoomCreateBody,
+    request: Request,
+    session: dict = Depends(require_csrf),
+):
+    if not rate_limiter.allow(
+        f"omok_room_create:{session['id']}:{_client_ip(request)}",
+        limit=15,
+        window_seconds=60,
+    ):
+        raise HTTPException(status_code=429, detail="요청이 너무 많습니다. 잠시 후 다시 시도해주세요.")
+    if body.stake not in OMOK_PVP_STAKES:
+        raise HTTPException(status_code=400, detail="유효하지 않은 참가비입니다. (100 / 300 / 500 P)")
+
+    now = utc_now_iso()
+    with transaction() as conn:
+        existing = conn.execute(
+            "SELECT id FROM omok_rooms WHERE (host_user_id = ? OR guest_user_id = ?) AND status IN ('waiting', 'playing')",
+            (session["id"], session["id"]),
+        ).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="이미 참여 중인 오목 대국실이 있습니다.")
+
+        try:
+            apply_point_delta(
+                conn,
+                session["id"],
+                -body.stake,
+                f"오목 1:1 대국실 생성 (-{body.stake:,}P)",
+                "omok_stake",
+                idempotency_key=f"omok_pvp:create:{session['id']}:{uuid.uuid4().hex}",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        cur = conn.execute(
+            """
+            INSERT INTO omok_rooms (host_user_id, stake, status, board_json, turn, moves_count, created_at)
+            VALUES (?, ?, 'waiting', ?, 1, 0, ?)
+            """,
+            (session["id"], body.stake, json.dumps(_empty_omok_board()), now),
+        )
+        room_id = cur.lastrowid
+        row = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+        return _omok_room_payload(conn, row, session["id"])
+
+
+@app.post("/api/games/omok/rooms/{room_id}/join")
+def join_omok_pvp_room(room_id: int, session: dict = Depends(require_csrf)):
+    with transaction() as conn:
+        existing = conn.execute(
+            "SELECT id FROM omok_rooms WHERE (host_user_id = ? OR guest_user_id = ?) AND status IN ('waiting', 'playing')",
+            (session["id"], session["id"]),
+        ).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="이미 참여 중인 오목 대국실이 있습니다.")
+
+        row = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="대국실을 찾을 수 없습니다.")
+        if row["status"] != "waiting":
+            raise HTTPException(status_code=409, detail="이미 시작되었거나 종료된 대국실입니다.")
+        if int(row["host_user_id"]) == int(session["id"]):
+            raise HTTPException(status_code=400, detail="본인이 만든 방에는 참가할 수 없습니다.")
+
+        stake = int(row["stake"])
+        try:
+            apply_point_delta(
+                conn,
+                session["id"],
+                -stake,
+                f"오목 1:1 대국실 참가 (-{stake:,}P)",
+                "omok_stake",
+                idempotency_key=f"omok_pvp:join:{room_id}:{session['id']}",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        deadline = (datetime.now(timezone.utc) + timedelta(seconds=OMOK_TURN_SECONDS)).isoformat()
+        cur = conn.execute(
+            """
+            UPDATE omok_rooms
+            SET guest_user_id = ?, status = 'playing', turn = 1, turn_deadline = ?
+            WHERE id = ? AND status = 'waiting'
+            """,
+            (session["id"], deadline, room_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=409, detail="이미 다른 사용자가 참가했습니다.")
+        updated = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+        return _omok_room_payload(conn, updated, session["id"])
+
+
+@app.post("/api/games/omok/rooms/{room_id}/cancel")
+def cancel_omok_pvp_room(room_id: int, session: dict = Depends(require_csrf)):
+    with transaction() as conn:
+        row = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="대국실을 찾을 수 없습니다.")
+        if int(row["host_user_id"]) != int(session["id"]):
+            raise HTTPException(status_code=403, detail="방장만 대국실을 취소할 수 있습니다.")
+        if row["status"] != "waiting":
+            raise HTTPException(status_code=409, detail="대기 중인 방만 취소할 수 있습니다.")
+
+        cur = conn.execute(
+            "UPDATE omok_rooms SET status = 'cancelled', end_reason = 'cancelled', finished_at = ? WHERE id = ? AND status = 'waiting'",
+            (utc_now_iso(), room_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=409, detail="이미 시작되었거나 취소된 방입니다.")
+
+        stake = int(row["stake"])
+        _, new_balance = apply_point_delta(
+            conn,
+            session["id"],
+            stake,
+            f"오목 1:1 대기실 취소 환급 (+{stake:,}P)",
+            "omok_reward",
+            idempotency_key=f"omok_pvp:cancel:{room_id}",
+        )
+    return {"ok": True, "points": new_balance}
+
+
+@app.post("/api/games/omok/rooms/{room_id}/move")
+def play_omok_pvp_move(
+    room_id: int,
+    body: OmokRoomMoveBody,
+    session: dict = Depends(require_csrf),
+):
+    with transaction() as conn:
+        row = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="대국실을 찾을 수 없습니다.")
+        row = _maybe_expire_omok_room(conn, row)
+        if row["status"] != "playing":
+            return _omok_room_payload(conn, row, session["id"])
+
+        turn = int(row["turn"])
+        expected_uid = row["host_user_id"] if turn == 1 else row["guest_user_id"]
+        if int(expected_uid or 0) != int(session["id"]):
+            raise HTTPException(status_code=400, detail="지금은 상대방 차례입니다.")
+
+        board = json.loads(row["board_json"])
+        if board[body.r][body.c] != 0:
+            raise HTTPException(status_code=400, detail="이미 돌이 놓인 자리입니다.")
+
+        board[body.r][body.c] = turn
+        moves_count = int(row["moves_count"]) + 1
+        last_move = {"r": body.r, "c": body.c}
+        win_line = _check_omok_win(board, body.r, body.c, turn)
+
+        if win_line:
+            conn.execute(
+                "UPDATE omok_rooms SET board_json = ?, moves_count = ?, last_move_json = ? WHERE id = ?",
+                (json.dumps(board), moves_count, json.dumps(last_move), room_id),
+            )
+            row = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+            _settle_omok_room(conn, row, session["id"], "five", win_line)
+        elif moves_count >= 225:
+            conn.execute(
+                "UPDATE omok_rooms SET board_json = ?, moves_count = ?, last_move_json = ? WHERE id = ?",
+                (json.dumps(board), moves_count, json.dumps(last_move), room_id),
+            )
+            row = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+            _settle_omok_room(conn, row, None, "draw")
+        else:
+            next_turn = 2 if turn == 1 else 1
+            next_deadline = (datetime.now(timezone.utc) + timedelta(seconds=OMOK_TURN_SECONDS)).isoformat()
+            conn.execute(
+                """
+                UPDATE omok_rooms
+                SET board_json = ?, turn = ?, moves_count = ?, last_move_json = ?, turn_deadline = ?
+                WHERE id = ? AND status = 'playing'
+                """,
+                (json.dumps(board), next_turn, moves_count, json.dumps(last_move), next_deadline, room_id),
+            )
+
+        updated = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+        return _omok_room_payload(conn, updated, session["id"])
+
+
+@app.post("/api/games/omok/rooms/{room_id}/resign")
+def resign_omok_pvp_room(room_id: int, session: dict = Depends(require_csrf)):
+    with transaction() as conn:
+        row = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="대국실을 찾을 수 없습니다.")
+        if row["status"] != "playing":
+            raise HTTPException(status_code=409, detail="진행 중인 대국이 아닙니다.")
+        uid = int(session["id"])
+        if uid not in (int(row["host_user_id"]), int(row["guest_user_id"] or 0)):
+            raise HTTPException(status_code=403, detail="대국 참여자만 기권할 수 있습니다.")
+
+        winner_id = row["guest_user_id"] if uid == int(row["host_user_id"]) else row["host_user_id"]
+        _settle_omok_room(conn, row, winner_id, "resign")
+        updated = conn.execute("SELECT * FROM omok_rooms WHERE id = ?", (room_id,)).fetchone()
+        return _omok_room_payload(conn, updated, session["id"])
 
 
 @app.get("/")
