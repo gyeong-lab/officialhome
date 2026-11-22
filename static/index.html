@@ -594,12 +594,12 @@
             <div class="suika-mode-bar">
               <div class="row-gap" style="flex-wrap:wrap">
                 <button type="button" class="pill active" id="omok-practice-btn">🎮 무료 연습</button>
-                <button type="button" class="pill omok-diff-btn" data-diff="easy">쉬움 (200P)</button>
-                <button type="button" class="pill omok-diff-btn active" data-diff="normal">보통 (400P)</button>
-                <button type="button" class="pill omok-diff-btn" data-diff="hard">어려움 (800P)</button>
+                <button type="button" class="pill omok-diff-btn" data-diff="easy">쉬움 (100P→200P)</button>
+                <button type="button" class="pill omok-diff-btn active" data-diff="normal">보통 (300P→700P)</button>
+                <button type="button" class="pill omok-diff-btn" data-diff="hard">어려움 (500P→1,500P)</button>
               </div>
               <div class="row-gap" style="flex-wrap:wrap">
-                <button type="button" class="btn btn-pink btn-sm" id="omok-start-challenge-btn">🔥 100P 걸고 도전 (승리 400P)</button>
+                <button type="button" class="btn btn-pink btn-sm" id="omok-start-challenge-btn">🔥 300P 걸고 도전 (승리 700P)</button>
                 <button type="button" class="btn btn-outline btn-sm hidden" id="omok-forfeit-btn">🏳️ 기권</button>
               </div>
             </div>
@@ -635,11 +635,11 @@
           <div class="suika-side">
             <div class="card">
               <h3>🏆 오목 AI 도전 보상표</h3>
-              <p class="muted small mt-6">참가비 <strong>100P</strong>를 걸고 AI에게 승리하면 난이도별 보상을 받습니다. (무승부 시 100P 환급)</p>
+              <p class="muted small mt-6">난이도별 참가비를 걸고 AI에게 승리하면 보상을 받습니다. (무승부 시 참가비 환급)</p>
               <div class="list-stack mt-12">
-                <div class="list-item row-between"><span>쉬움 AI 승리</span><span class="badge-pink">200 P (+100P)</span></div>
-                <div class="list-item row-between"><span>보통 AI 승리</span><span class="badge-pink">400 P (+300P)</span></div>
-                <div class="list-item row-between"><span>어려움 AI 승리</span><span class="badge-pink">800 P (+700P)</span></div>
+                <div class="list-item row-between"><span>쉬움 AI (참가비 100P)</span><span class="badge-pink">승리 200 P (+100P)</span></div>
+                <div class="list-item row-between"><span>보통 AI (참가비 300P)</span><span class="badge-pink">승리 700 P (+400P)</span></div>
+                <div class="list-item row-between"><span>어려움 AI (참가비 500P)</span><span class="badge-pink">승리 1,500 P (+1,000P)</span></div>
               </div>
             </div>
 
@@ -854,7 +854,7 @@
 
   <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
   <script src="/static/suika.js?v=20261122b"></script>
-  <script src="/static/omok.js?v=20261122a"></script>
+  <script src="/static/omok.js?v=20261122b"></script>
   <script src="/static/app.js?v=20261122h"></script>
 </body>
 </html>

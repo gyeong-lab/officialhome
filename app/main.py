@@ -3136,11 +3136,15 @@ def forfeit_suika_challenge(
 # Mini-Game: Omok (오목) + AI Point Challenge
 # ---------------------------------------------------------------------------
 
-OMOK_STAKE = 100
+OMOK_STAKES = {
+    "easy": 100,
+    "normal": 300,
+    "hard": 500,
+}
 OMOK_REWARDS = {
     "easy": 200,
-    "normal": 400,
-    "hard": 800,
+    "normal": 700,
+    "hard": 1500,
 }
 OMOK_DIFFICULTY_LABELS = {
     "easy": "쉬움",
@@ -3151,7 +3155,7 @@ OMOK_DIFFICULTY_LABELS = {
 
 def omok_rules_payload() -> dict:
     return {
-        "stake": OMOK_STAKE,
+        "stakes": dict(OMOK_STAKES),
         "rewards": dict(OMOK_REWARDS),
         "labels": dict(OMOK_DIFFICULTY_LABELS),
     }
@@ -3264,12 +3268,13 @@ def start_omok_challenge(
             )
 
         diff_label = OMOK_DIFFICULTY_LABELS[body.difficulty]
+        stake = OMOK_STAKES[body.difficulty]
         try:
             _, new_balance = apply_point_delta(
                 conn,
                 session["id"],
-                -OMOK_STAKE,
-                f"오목 AI({diff_label}) 포인트 도전 (-{OMOK_STAKE:,}P)",
+                -stake,
+                f"오목 AI({diff_label}) 포인트 도전 (-{stake:,}P)",
                 "omok_stake",
                 idempotency_key=f"omok:stake:{session['id']}:{uuid.uuid4().hex}",
             )
@@ -3281,14 +3286,14 @@ def start_omok_challenge(
             INSERT INTO omok_runs (user_id, difficulty, stake, result, moves_count, duration_sec, reward, created_at)
             VALUES (?, ?, ?, 'active', 0, 0, 0, ?)
             """,
-            (session["id"], body.difficulty, OMOK_STAKE, now),
+            (session["id"], body.difficulty, stake, now),
         )
         run_id = cur.lastrowid
 
     return {
         "run_id": run_id,
         "difficulty": body.difficulty,
-        "stake": OMOK_STAKE,
+        "stake": stake,
         "points": new_balance,
         "rules": omok_rules_payload(),
     }

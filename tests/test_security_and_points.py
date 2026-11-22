@@ -423,10 +423,11 @@ class SecurityAndPointsTests(unittest.TestCase):
         player.csrf_token = reg_data["csrf_token"]
         self.assertEqual(reg_data["user"]["points"], 2000)
 
-        # Start hard AI match (100P stake -> 1900P)
+        # Start hard AI match (500P stake -> 1500P)
         s_start, start_data = player.request("POST", "/api/games/omok/start", {"difficulty": "hard"})
         self.assertEqual(s_start, 200)
-        self.assertEqual(start_data["points"], 1900)
+        self.assertEqual(start_data["stake"], 500)
+        self.assertEqual(start_data["points"], 1500)
         run_id = start_data["run_id"]
 
         # Instant win (<3s or <9 moves) is blocked
@@ -437,7 +438,7 @@ class SecurityAndPointsTests(unittest.TestCase):
         )
         self.assertEqual(s_cheat, 400)
 
-        # Realistic elapsed time -> hard win awards 800P (1900 + 800 = 2700P)
+        # Realistic elapsed time -> hard win awards 1500P (1500 + 1500 = 3000P)
         conn = get_connection()
         try:
             conn.execute("UPDATE omok_runs SET created_at = '2026-01-01T00:00:00+00:00' WHERE id = ?", (run_id,))
@@ -451,8 +452,8 @@ class SecurityAndPointsTests(unittest.TestCase):
             {"run_id": run_id, "result": "win", "moves_count": 19, "duration_sec": 25},
         )
         self.assertEqual(s_win, 200)
-        self.assertEqual(win_data["reward"], 800)
-        self.assertEqual(win_data["points"], 2700)
+        self.assertEqual(win_data["reward"], 1500)
+        self.assertEqual(win_data["points"], 3000)
 
         # Double settlement is rejected
         s_dup, _ = player.request(

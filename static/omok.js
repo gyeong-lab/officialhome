@@ -19,7 +19,8 @@
     [11, 11],
   ];
   const DIFF_LABELS = { easy: "쉬움", normal: "보통", hard: "어려움" };
-  const DIFF_REWARDS = { easy: 200, normal: 400, hard: 800 };
+  const DIFF_STAKES = { easy: 100, normal: 300, hard: 500 };
+  const DIFF_REWARDS = { easy: 200, normal: 700, hard: 1500 };
 
   const omok = {
     initialized: false,
@@ -480,7 +481,8 @@
 
   async function forfeitActiveMatch() {
     if (!omok.activeRunId || !omok.apiHelper) return;
-    if (!window.confirm("정말 현재 대국을 기권할까요? 참가비 100P는 반환되지 않습니다.")) return;
+    const stake = DIFF_STAKES[omok.difficulty] || 100;
+    if (!window.confirm(`정말 현재 대국을 기권할까요? 참가비 ${stake.toLocaleString()}P는 반환되지 않습니다.`)) return;
     try {
       await omok.apiHelper("/api/games/omok/forfeit", {
         method: "POST",
@@ -532,10 +534,11 @@
     if (practiceBtn) practiceBtn.classList.toggle("active", omok.mode === "practice");
     if (startBtn) {
       startBtn.disabled = Boolean(omok.activeRunId);
-      const reward = DIFF_REWARDS[omok.difficulty];
+      const stake = DIFF_STAKES[omok.difficulty] || 100;
+      const reward = DIFF_REWARDS[omok.difficulty] || 200;
       startBtn.textContent = omok.activeRunId
         ? `대국 진행 중 (${DIFF_LABELS[omok.difficulty]})`
-        : `🔥 100P 걸고 도전 (승리 ${reward.toLocaleString()}P)`;
+        : `🔥 ${stake.toLocaleString()}P 걸고 도전 (승리 ${reward.toLocaleString()}P)`;
     }
     if (forfeitBtn) forfeitBtn.classList.toggle("hidden", !omok.activeRunId);
     updateHud();
