@@ -47,7 +47,7 @@ def _qmark_to_percent(sql: str) -> str:
             in_quote = not in_quote
         elif ch == "?" and not in_quote:
             out.append("%s")
-        elif ch == "%" and not in_quote:
+        elif ch == "%" :
             out.append("%%")
         else:
             out.append(ch)
