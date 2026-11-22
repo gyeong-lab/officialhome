@@ -467,6 +467,14 @@ _PG_SCHEMA_STATEMENTS = [
         updated_at TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS uploaded_files (
+        filename TEXT PRIMARY KEY,
+        content_type TEXT NOT NULL,
+        data BYTEA NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
 ]
 
 
@@ -716,6 +724,13 @@ def init_db() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL DEFAULT '',
                 updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS uploaded_files (
+                filename TEXT PRIMARY KEY,
+                content_type TEXT NOT NULL,
+                data BLOB NOT NULL,
+                created_at TEXT NOT NULL
             );
             """
         )

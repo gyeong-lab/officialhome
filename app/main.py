@@ -1246,7 +1246,17 @@ async def upload_media(files: list[UploadFile] = File(...), session: dict = Depe
             raise HTTPException(status_code=400, detail="파일 내용이 확장자와 일치하지 않습니다.")
 
         safe_filename = f"{uuid.uuid4().hex}{ext}"
+        content_type = ALLOWED_IMAGE_EXTS.get(ext) or ALLOWED_VIDEO_EXTS.get(ext) or "application/octet-stream"
         (UPLOAD_DIR / safe_filename).write_bytes(data)
+        with transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO uploaded_files (filename, content_type, data, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(filename) DO UPDATE SET content_type = excluded.content_type, data = excluded.data
+                """,
+                (safe_filename, content_type, data, utc_now_iso()),
+            )
         saved.append({"url": f"/uploads/{safe_filename}", "kind": kind, "name": clean_text(orig_name, 80)})
 
     return {"files": saved}
@@ -2731,7 +2741,30 @@ def admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
 # ---------------------------------------------------------------------------
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
+
+@app.get("/uploads/{filename}")
+def serve_uploaded_file(filename: str):
+    if not re.fullmatch(r"[a-f0-9]{32}\.[a-z0-9]{2,5}", filename):
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+    disk_path = UPLOAD_DIR / filename
+    if disk_path.is_file():
+        return FileResponse(str(disk_path), headers={"Cache-Control": "public, max-age=31536000"})
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT content_type, data FROM uploaded_files WHERE filename = ?",
+            (filename,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+        return Response(
+            content=bytes(row["data"]),
+            media_type=row["content_type"],
+            headers={"Cache-Control": "public, max-age=31536000"},
+        )
+    finally:
+        conn.close()
 
 
 @app.get("/api/emoticons")
