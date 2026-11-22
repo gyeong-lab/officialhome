@@ -1552,3 +1552,20 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
 }
+
+.btn-challenge {
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 6px 16px rgba(234, 88, 12, 0.25);
+}
+
+.btn-challenge:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.btn-challenge:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
