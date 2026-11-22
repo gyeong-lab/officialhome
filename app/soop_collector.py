@@ -19,7 +19,7 @@ collector_state = {
     "status_text": "초기화 중...",
     "messages_seen": 0,
     "points_awarded": 0,
-    "recent_logs": deque(maxlen=12),
+    "recent_logs": deque(maxlen=100),
     "last_updated": 0.0,
 }
 
@@ -163,11 +163,17 @@ async def _run_collector_loop(on_chat_message: Callable[[str, str], dict]) -> No
                     if res.get("status") == "awarded":
                         collector_state["points_awarded"] += int(res.get("awarded", 0))
                         collector_state["recent_logs"].appendleft(
-                            f"+{res.get('awarded')}P · {sender_id}: {message[:30]}"
+                            {
+                                "soop_id": sender_id,
+                                "text": f"+{res.get('awarded')}P · {sender_id}: {message[:30]}",
+                            }
                         )
                     elif res.get("status") == "verified":
                         collector_state["recent_logs"].appendleft(
-                            f"✅ 인증완료 · {sender_id}"
+                            {
+                                "soop_id": sender_id,
+                                "text": f"✅ 인증완료 · {sender_id}",
+                            }
                         )
         except Exception as exc:
             collector_state["connected"] = False
@@ -181,7 +187,16 @@ def start_collector(on_chat_message: Callable[[str, str], dict]) -> None:
         _collector_task = asyncio.create_task(_run_collector_loop(on_chat_message))
 
 
-def get_collector_status() -> dict:
+def get_collector_status(soop_id: str | None = None) -> dict:
+    target = (soop_id or "").strip().lower()
+    if target:
+        logs = [
+            item["text"] if isinstance(item, dict) else str(item)
+            for item in collector_state["recent_logs"]
+            if isinstance(item, dict) and item.get("soop_id") == target
+        ][:12]
+    else:
+        logs = []
     return {
         "enabled": collector_state["enabled"],
         "connected": collector_state["connected"],
@@ -189,5 +204,5 @@ def get_collector_status() -> dict:
         "status_text": collector_state["status_text"],
         "messages_seen": collector_state["messages_seen"],
         "points_awarded": collector_state["points_awarded"],
-        "recent_logs": list(collector_state["recent_logs"]),
+        "recent_logs": logs,
     }

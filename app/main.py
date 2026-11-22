@@ -683,8 +683,24 @@ def _process_soop_chat_event(soop_id_raw: str, message_raw: str, event_id: str |
 
 
 @app.get("/api/integrations/soop/collector/status")
-def soop_collector_status():
-    return get_collector_status()
+def soop_collector_status(session: dict | None = Depends(get_current_session)):
+    my_soop = (session.get("soop_id") or "") if (session and session.get("soop_verified")) else None
+    st = get_collector_status(my_soop)
+    if session:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt, COALESCE(SUM(delta), 0) AS total FROM point_ledger WHERE user_id = ? AND source = 'soop_chat'",
+                (session["id"],),
+            ).fetchone()
+            st["messages_seen"] = int(row["cnt"] or 0)
+            st["points_awarded"] = int(row["total"] or 0)
+        finally:
+            conn.close()
+    else:
+        st["messages_seen"] = 0
+        st["points_awarded"] = 0
+    return st
 
 
 @app.post("/api/integrations/soop/chat-events")
@@ -893,9 +909,13 @@ def ingest_soop_sdk_message(body: SoopSdkMessageBody, admin: dict = Depends(requ
     res = _process_soop_chat_event(sender_id, msg)
     if res.get("status") == "awarded":
         collector_state["points_awarded"] += int(res.get("awarded", 0))
-        collector_state["recent_logs"].appendleft(f"+{res.get('awarded')}P · {sender_id}: {msg[:30]}")
+        collector_state["recent_logs"].appendleft(
+            {"soop_id": sender_id, "text": f"+{res.get('awarded')}P · {sender_id}: {msg[:30]}"}
+        )
     elif res.get("status") == "verified":
-        collector_state["recent_logs"].appendleft(f"✅ 인증완료 · {sender_id}")
+        collector_state["recent_logs"].appendleft(
+            {"soop_id": sender_id, "text": f"✅ 인증완료 · {sender_id}"}
+        )
     return res
 
 
