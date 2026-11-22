@@ -72,13 +72,13 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self'; "
+        "script-src 'self' https://static.sooplive.com; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
-        "img-src 'self' data: https://*.sooplive.com; "
-        "media-src 'self'; "
-        "connect-src 'self'; "
-        "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com; "
+        "img-src 'self' data: blob: https://*.sooplive.com https://*.sooplive.co.kr; "
+        "media-src 'self' blob:; "
+        "connect-src 'self' https://*.sooplive.com wss://*.sooplive.com; "
+        "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com https://vod.sooplive.com https://vod.sooplive.co.kr; "
         "frame-ancestors 'none';"
     )
     return response
