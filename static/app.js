@@ -1830,8 +1830,6 @@
           }),
         ])
       );
-      simSoopInput.value = state.user.soop_pending_id;
-      document.getElementById("sim-message").value = `!인증 ${state.user.soop_verify_code}`;
     }
   }
 
