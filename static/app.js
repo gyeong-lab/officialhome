@@ -94,7 +94,10 @@
 
   function formatDate(iso) {
     if (!iso) return "";
-    return iso.slice(0, 16).replace("T", " ");
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso).slice(0, 16).replace("T", " ");
+    const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+    return kst.toISOString().slice(0, 16).replace("T", " ");
   }
 
   // Modal helpers
