@@ -11,6 +11,10 @@
   const SUBSTEPS = 8;
   const DROP_COOLDOWN_MS = 450;
 
+  const WATERMELON_IMG_URL = "/static/images/suika_final.jpg?v=20261123a";
+  const watermelonImg = new Image();
+  watermelonImg.src = WATERMELON_IMG_URL;
+
   const FRUITS = [
     { tier: 1, name: "체리", emoji: "🍒", r: 16, score: 2, color: "#fb7185", rim: "#be123c" },
     { tier: 2, name: "딸기", emoji: "🍓", r: 22, score: 4, color: "#f43f5e", rim: "#9f1239" },
@@ -343,6 +347,23 @@
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
+
+    if (tier === FRUITS.length && watermelonImg.complete && watermelonImg.naturalWidth > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, r - 1, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(watermelonImg, -r, -r, r * 2, r * 2);
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, r - 1, 0, Math.PI * 2);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#ec4899";
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
 
     // Body gradient
     const grad = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
@@ -813,7 +834,12 @@
   function renderEvolutionStrip() {
     const strip = document.getElementById("suika-evo-strip");
     if (!strip) return;
-    strip.innerHTML = FRUITS.map((f) => `<span class="suika-evo-chip" title="${f.name} (+${f.score}점)">${f.emoji} ${f.name}</span>`).join("");
+    strip.innerHTML = FRUITS.map((f) => {
+      if (f.tier === FRUITS.length) {
+        return `<span class="suika-evo-chip" title="${f.name} (+${f.score}점)"><img src="${WATERMELON_IMG_URL}" alt="${f.name}" class="suika-evo-thumb" /> ${f.name}</span>`;
+      }
+      return `<span class="suika-evo-chip" title="${f.name} (+${f.score}점)">${f.emoji} ${f.name}</span>`;
+    }).join("");
   }
 
   function initPage({ api, getUser, onPointsChanged, showToast }) {

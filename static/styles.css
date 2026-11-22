@@ -1522,6 +1522,17 @@ html, body {
   font-size: 0.78rem;
   font-weight: 600;
   color: #831843;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.suika-evo-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #ec4899;
 }
 
 @media (max-width: 860px) {
