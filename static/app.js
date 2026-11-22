@@ -791,7 +791,7 @@
           loadNotices();
           window.scrollTo({ top: 0, behavior: "smooth" });
         };
-        const btnRow = el("div", { className: "row-gap", style: "width:100%; justify-content:center" }, [
+        const btnRow = el("div", { className: "row-gap", style: "width:100%; justify-content:center; flex-wrap:wrap" }, [
           el("button", {
             type: "button",
             className: "btn btn-outline btn-sm",
@@ -2154,11 +2154,11 @@
     const ledgerWrap = document.getElementById("ledger-list");
     const ledgerPag = document.getElementById("ledger-pagination");
     const redWrap = document.getElementById("my-redemptions-list");
-    clear(ledgerWrap);
-    if (ledgerPag) clear(ledgerPag);
-    clear(redWrap);
 
     if (!state.user) {
+      clear(ledgerWrap);
+      if (ledgerPag) clear(ledgerPag);
+      clear(redWrap);
       ledgerWrap.appendChild(el("p", { className: "muted", textContent: "로그인 후 확인할 수 있습니다." }));
       redWrap.appendChild(el("p", { className: "muted", textContent: "로그인 후 확인할 수 있습니다." }));
       return;
@@ -2172,9 +2172,19 @@
         api("/api/redemptions/me"),
       ]);
     } catch (err) {
+      clear(ledgerWrap);
+      if (ledgerPag) clear(ledgerPag);
       ledgerWrap.appendChild(el("p", { className: "muted small", textContent: err.message || "포인트 원장을 불러오지 못했습니다." }));
       return;
     }
+
+    clear(ledgerWrap);
+    if (ledgerPag) {
+      clear(ledgerPag);
+      ledgerPag.style.flexDirection = "column";
+      ledgerPag.style.alignItems = "center";
+    }
+    clear(redWrap);
 
     if (!(ledgerRes.ledger || []).length) {
       ledgerWrap.appendChild(el("p", { className: "muted small", textContent: "포인트 내역이 없습니다." }));
@@ -2203,7 +2213,7 @@
           state.ledgerPage = p;
           loadPointsPage();
         };
-        const btnRow = el("div", { className: "row-gap", style: "width:100%; justify-content:center" }, [
+        const btnRow = el("div", { className: "row-gap", style: "width:100%; justify-content:center; flex-wrap:wrap" }, [
           el("button", {
             type: "button",
             className: "btn btn-outline btn-sm",
