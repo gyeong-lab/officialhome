@@ -475,6 +475,22 @@ _PG_SCHEMA_STATEMENTS = [
         created_at TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS suika_runs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        mode TEXT NOT NULL DEFAULT 'challenge' CHECK(mode IN ('practice', 'challenge')),
+        stake INTEGER NOT NULL DEFAULT 0 CHECK(stake >= 0),
+        score INTEGER NOT NULL DEFAULT 0 CHECK(score >= 0),
+        max_tier INTEGER NOT NULL DEFAULT 1 CHECK(max_tier >= 1 AND max_tier <= 11),
+        merges_count INTEGER NOT NULL DEFAULT 0 CHECK(merges_count >= 0),
+        duration_sec INTEGER NOT NULL DEFAULT 0 CHECK(duration_sec >= 0),
+        reward INTEGER NOT NULL DEFAULT 0 CHECK(reward >= 0),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'finished', 'forfeited')),
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+    )
+    """,
 ]
 
 
@@ -731,6 +747,21 @@ def init_db() -> None:
                 content_type TEXT NOT NULL,
                 data BLOB NOT NULL,
                 created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS suika_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                mode TEXT NOT NULL DEFAULT 'challenge' CHECK(mode IN ('practice', 'challenge')),
+                stake INTEGER NOT NULL DEFAULT 0 CHECK(stake >= 0),
+                score INTEGER NOT NULL DEFAULT 0 CHECK(score >= 0),
+                max_tier INTEGER NOT NULL DEFAULT 1 CHECK(max_tier >= 1 AND max_tier <= 11),
+                merges_count INTEGER NOT NULL DEFAULT 0 CHECK(merges_count >= 0),
+                duration_sec INTEGER NOT NULL DEFAULT 0 CHECK(duration_sec >= 0),
+                reward INTEGER NOT NULL DEFAULT 0 CHECK(reward >= 0),
+                status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'finished', 'forfeited')),
+                created_at TEXT NOT NULL,
+                finished_at TEXT
             );
             """
         )

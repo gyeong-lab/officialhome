@@ -299,6 +299,23 @@ class RoleUpdateBody(BaseModel):
     role: Literal["user", "staff"]
 
 
+class SuikaStartBody(BaseModel):
+    stake: int
+    forfeit_existing: bool = False
+
+
+class SuikaFinishBody(BaseModel):
+    run_id: int
+    score: int = Field(ge=0, le=50000)
+    max_tier: int = Field(ge=1, le=11)
+    merges_count: int = Field(ge=0, le=5000)
+    duration_sec: int = Field(ge=0, le=86400)
+
+
+class SuikaForfeitBody(BaseModel):
+    run_id: int
+
+
 class PredictionCreateBody(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     options: list[str] = Field(min_length=2, max_length=10)
@@ -2823,6 +2840,254 @@ def delete_emoticon(emoticon_id: int, staff: dict = Depends(require_admin)):
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# Mini-Game: Suika (수박게임) + Point Challenge
+# ---------------------------------------------------------------------------
+
+SUIKA_STAKES = (100, 300, 500)
+SUIKA_REWARD_TIERS = (
+    {"min_score": 3000, "multiplier": 4.0, "label": "3,000점 이상"},
+    {"min_score": 2000, "multiplier": 2.5, "label": "2,000점 이상"},
+    {"min_score": 1000, "multiplier": 1.8, "label": "1,000점 이상"},
+)
+
+
+def compute_suika_reward(stake: int, score: int) -> int:
+    for tier in SUIKA_REWARD_TIERS:
+        if score >= tier["min_score"]:
+            return int(round(stake * tier["multiplier"]))
+    return 0
+
+
+def suika_rules_payload() -> dict:
+    return {
+        "stakes": list(SUIKA_STAKES),
+        "tiers": list(SUIKA_REWARD_TIERS),
+    }
+
+
+@app.get("/api/games/suika/leaderboard")
+def get_suika_leaderboard():
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT u.id AS user_id,
+                   u.nickname,
+                   MAX(r.score) AS best_score,
+                   MAX(r.max_tier) AS best_tier,
+                   COUNT(*) AS games_played
+            FROM suika_runs r
+            JOIN users u ON u.id = r.user_id
+            WHERE r.status = 'finished'
+            GROUP BY u.id, u.nickname
+            ORDER BY best_score DESC, games_played ASC
+            LIMIT 10
+            """
+        ).fetchall()
+        return {
+            "rules": suika_rules_payload(),
+            "leaderboard": [dict(row) for row in rows],
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/games/suika/me")
+def get_my_suika_stats(session: dict = Depends(require_user)):
+    conn = get_connection()
+    try:
+        summary = conn.execute(
+            """
+            SELECT COALESCE(MAX(score), 0) AS best_score,
+                   COUNT(*) AS total_runs,
+                   COALESCE(SUM(reward), 0) AS total_reward,
+                   COALESCE(SUM(stake), 0) AS total_stake
+            FROM suika_runs
+            WHERE user_id = ? AND status = 'finished'
+            """,
+            (session["id"],),
+        ).fetchone()
+        active_row = conn.execute(
+            """
+            SELECT id, stake, created_at
+            FROM suika_runs
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (session["id"],),
+        ).fetchone()
+        recent_rows = conn.execute(
+            """
+            SELECT id, stake, score, max_tier, reward, status, created_at, finished_at
+            FROM suika_runs
+            WHERE user_id = ? AND status != 'active'
+            ORDER BY id DESC
+            LIMIT 10
+            """,
+            (session["id"],),
+        ).fetchall()
+        return {
+            "rules": suika_rules_payload(),
+            "best_score": int(summary["best_score"]) if summary else 0,
+            "total_runs": int(summary["total_runs"]) if summary else 0,
+            "total_reward": int(summary["total_reward"]) if summary else 0,
+            "total_stake": int(summary["total_stake"]) if summary else 0,
+            "active_run": dict(active_row) if active_row else None,
+            "recent_runs": [dict(r) for r in recent_rows],
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/api/games/suika/start")
+def start_suika_challenge(
+    body: SuikaStartBody,
+    request: Request,
+    session: dict = Depends(require_csrf),
+):
+    if not rate_limiter.allow(
+        f"suika_start:{session['id']}:{_client_ip(request)}",
+        limit=20,
+        window_seconds=60,
+    ):
+        raise HTTPException(status_code=429, detail="요청이 너무 많습니다. 잠시 후 다시 시도해주세요.")
+    if body.stake not in SUIKA_STAKES:
+        raise HTTPException(status_code=400, detail="유효하지 않은 참가비입니다. (100 / 300 / 500 P)")
+
+    now = utc_now_iso()
+    with transaction() as conn:
+        active = conn.execute(
+            "SELECT id, stake FROM suika_runs WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+            (session["id"],),
+        ).fetchone()
+        if active:
+            if not body.forfeit_existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail="이미 진행 중인 수박게임 도전이 있습니다. 기존 도전을 포기하고 새로 시작할 수 있습니다.",
+                )
+            conn.execute(
+                "UPDATE suika_runs SET status = 'forfeited', finished_at = ? WHERE id = ? AND status = 'active'",
+                (now, active["id"]),
+            )
+
+        try:
+            _, new_balance = apply_point_delta(
+                conn,
+                session["id"],
+                -body.stake,
+                f"수박게임 포인트 도전 참가 (-{body.stake:,}P)",
+                "suika_stake",
+                idempotency_key=f"suika:stake:{session['id']}:{uuid.uuid4().hex}",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        cur = conn.execute(
+            """
+            INSERT INTO suika_runs (user_id, mode, stake, score, max_tier, merges_count, duration_sec, reward, status, created_at)
+            VALUES (?, 'challenge', ?, 0, 1, 0, 0, 0, 'active', ?)
+            """,
+            (session["id"], body.stake, now),
+        )
+        run_id = cur.lastrowid
+
+    return {
+        "run_id": run_id,
+        "stake": body.stake,
+        "points": new_balance,
+        "rules": suika_rules_payload(),
+    }
+
+
+@app.post("/api/games/suika/finish")
+def finish_suika_challenge(
+    body: SuikaFinishBody,
+    session: dict = Depends(require_csrf),
+):
+    now = utc_now_iso()
+    with transaction() as conn:
+        run = conn.execute(
+            "SELECT id, user_id, stake, status, created_at FROM suika_runs WHERE id = ? AND user_id = ?",
+            (body.run_id, session["id"]),
+        ).fetchone()
+        if not run:
+            raise HTTPException(status_code=404, detail="수박게임 도전 기록을 찾을 수 없습니다.")
+        if run["status"] != "active":
+            raise HTTPException(status_code=409, detail="이미 정산되었거나 종료된 게임입니다.")
+
+        # Server-side plausibility check to block trivial API spoofing
+        elapsed_sec = 0
+        try:
+            started_dt = datetime.fromisoformat(run["created_at"])
+            if started_dt.tzinfo is None:
+                started_dt = started_dt.replace(tzinfo=timezone.utc)
+            elapsed_sec = max(0, int((datetime.now(timezone.utc) - started_dt).total_seconds()))
+        except Exception:
+            elapsed_sec = body.duration_sec
+
+        if body.score >= 1000 and (body.duration_sec < 5 or body.merges_count < 10 or elapsed_sec < 4):
+            raise HTTPException(status_code=400, detail="비정상적인 게임 기록으로 판정되어 정산할 수 없습니다.")
+
+        stake = int(run["stake"])
+        reward = compute_suika_reward(stake, body.score)
+
+        cur = conn.execute(
+            """
+            UPDATE suika_runs
+            SET score = ?, max_tier = ?, merges_count = ?, duration_sec = ?, reward = ?, status = 'finished', finished_at = ?
+            WHERE id = ? AND user_id = ? AND status = 'active'
+            """,
+            (body.score, body.max_tier, body.merges_count, body.duration_sec, reward, now, body.run_id, session["id"]),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=409, detail="이미 정산된 게임입니다.")
+
+        if reward > 0:
+            _, new_balance = apply_point_delta(
+                conn,
+                session["id"],
+                reward,
+                f"수박게임 {body.score:,}점 달성 보상 (+{reward:,}P)",
+                "suika_reward",
+                idempotency_key=f"suika:reward:{body.run_id}",
+            )
+        else:
+            row = conn.execute("SELECT points FROM users WHERE id = ?", (session["id"],)).fetchone()
+            new_balance = int(row["points"]) if row else 0
+
+    return {
+        "ok": True,
+        "run_id": body.run_id,
+        "score": body.score,
+        "stake": stake,
+        "reward": reward,
+        "net": reward - stake,
+        "points": new_balance,
+    }
+
+
+@app.post("/api/games/suika/forfeit")
+def forfeit_suika_challenge(
+    body: SuikaForfeitBody,
+    session: dict = Depends(require_csrf),
+):
+    with transaction() as conn:
+        cur = conn.execute(
+            """
+            UPDATE suika_runs
+            SET status = 'forfeited', finished_at = ?
+            WHERE id = ? AND user_id = ? AND status = 'active'
+            """,
+            (utc_now_iso(), body.run_id, session["id"]),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="진행 중인 도전을 찾을 수 없습니다.")
+    return {"ok": True}
+
+
 @app.get("/")
 @app.get("/notice")
 @app.get("/board")
@@ -2830,6 +3095,7 @@ def delete_emoticon(emoticon_id: int, staff: dict = Depends(require_admin)):
 @app.get("/emoticons")
 @app.get("/calendar")
 @app.get("/points")
+@app.get("/game")
 @app.get("/gift")
 @app.get("/admin")
 def serve_index():

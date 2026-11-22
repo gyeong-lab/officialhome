@@ -320,6 +320,70 @@ class SecurityAndPointsTests(unittest.TestCase):
         )
         self.assertEqual(s_login_banned, 403)
 
+    def test_suika_game_points_and_anticheat(self) -> None:
+        from app.database import get_connection
+
+        player = ApiClient(self.base_url)
+        s_reg, reg_data = player.request(
+            "POST",
+            "/api/auth/register",
+            {"username": "suikafan", "nickname": "수박유저", "password": "Password!123"},
+        )
+        self.assertEqual(s_reg, 200)
+        player.csrf_token = reg_data["csrf_token"]
+        self.assertEqual(reg_data["user"]["points"], 2000)
+
+        # Invalid stake is rejected
+        s_bad_stake, _ = player.request("POST", "/api/games/suika/start", {"stake": 250})
+        self.assertEqual(s_bad_stake, 400)
+
+        # Start 100P challenge -> balance becomes 1900
+        s_start, start_data = player.request("POST", "/api/games/suika/start", {"stake": 100})
+        self.assertEqual(s_start, 200)
+        self.assertEqual(start_data["points"], 1900)
+        run_id = start_data["run_id"]
+
+        # Instant high score (<4s elapsed) is blocked by anti-cheat
+        s_cheat, _ = player.request(
+            "POST",
+            "/api/games/suika/finish",
+            {"run_id": run_id, "score": 1500, "max_tier": 6, "merges_count": 20, "duration_sec": 25},
+        )
+        self.assertEqual(s_cheat, 400)
+
+        # Simulate realistic 20s elapsed run in DB, then finish with 1,200 points -> 180P reward (2080P total)
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE suika_runs SET created_at = '2026-01-01T00:00:00+00:00' WHERE id = ?",
+                (run_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        s_win, win_data = player.request(
+            "POST",
+            "/api/games/suika/finish",
+            {"run_id": run_id, "score": 1200, "max_tier": 7, "merges_count": 32, "duration_sec": 25},
+        )
+        self.assertEqual(s_win, 200)
+        self.assertEqual(win_data["reward"], 180)
+        self.assertEqual(win_data["points"], 2080)
+
+        # Double settlement on the same run is rejected
+        s_dup, _ = player.request(
+            "POST",
+            "/api/games/suika/finish",
+            {"run_id": run_id, "score": 1200, "max_tier": 7, "merges_count": 32, "duration_sec": 25},
+        )
+        self.assertEqual(s_dup, 409)
+
+        # Leaderboard reflects the finished run
+        s_lb, lb_data = player.request("GET", "/api/games/suika/leaderboard")
+        self.assertEqual(s_lb, 200)
+        self.assertTrue(any(r["nickname"] == "수박유저" and r["best_score"] == 1200 for r in lb_data["leaderboard"]))
+
 
 if __name__ == "__main__":
     unittest.main()

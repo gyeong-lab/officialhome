@@ -375,6 +375,7 @@
     else if (pageName === "emoticons") loadEmoticonsPage();
     else if (pageName === "calendar") loadCalendar();
     else if (pageName === "points") loadPointsPage();
+    else if (pageName === "game") loadGamePage();
     else if (pageName === "gift") loadGiftPage();
     else if (pageName === "admin") loadAdminPage();
   }
@@ -2249,6 +2250,22 @@
     });
   }
 
+  function loadGamePage() {
+    if (!window.ChaeonSuika || typeof window.ChaeonSuika.initPage !== "function") return;
+    window.ChaeonSuika.initPage({
+      api,
+      getUser: () => state.user,
+      onPointsChanged: (newPoints) => {
+        if (state.user && typeof newPoints === "number") {
+          state.user.points = newPoints;
+          renderAuthArea();
+          renderHomeUserBox();
+        }
+      },
+      showToast,
+    });
+  }
+
   // Gift Page
   let currentGiftType = "point";
 
@@ -3097,7 +3114,23 @@
       openModal("새 승부예측 만들기", form);
     });
 
-    // Gift Page
+    function loadGamePage() {
+    if (!window.ChaeonSuika || typeof window.ChaeonSuika.initPage !== "function") return;
+    window.ChaeonSuika.initPage({
+      api,
+      getUser: () => state.user,
+      onPointsChanged: (newPoints) => {
+        if (state.user && typeof newPoints === "number") {
+          state.user.points = newPoints;
+          renderAuthArea();
+          renderHomeUserBox();
+        }
+      },
+      showToast,
+    });
+  }
+
+  // Gift Page
   let currentGiftType = "point";
 
   async function loadGiftPage() {
@@ -3663,7 +3696,7 @@
 
   async function syncFromLocation() {
     const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
-    const validPages = ["home", "notice", "board", "signatures", "emoticons", "calendar", "points", "gift", "admin"];
+    const validPages = ["home", "notice", "board", "signatures", "emoticons", "calendar", "points", "game", "gift", "admin"];
     const targetPage = validPages.includes(path) ? path : "home";
     switchPage(targetPage, false);
 

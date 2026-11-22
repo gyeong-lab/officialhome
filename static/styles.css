@@ -1408,3 +1408,124 @@ html, body {
     font-size: 16px;
   }
 }
+
+/* Suika Mini-Game */
+.suika-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.suika-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.suika-mode-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.suika-hud {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.suika-hud-box {
+  background: var(--pink-50, #fdf2f8);
+  border: 1px solid var(--pink-200, #fbcfe8);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.suika-hud-box strong {
+  font-size: 1.05rem;
+  color: #be185d;
+}
+
+.suika-hud-wide {
+  grid-column: 1 / -1;
+}
+
+.suika-stage-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 2px solid #f9a8d4;
+  box-shadow: 0 10px 26px rgba(236, 72, 153, 0.12);
+  background: #fff5f9;
+}
+
+#suika-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 400 / 560;
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.suika-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 241, 246, 0.86);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 5;
+}
+
+.suika-overlay.hidden {
+  display: none;
+}
+
+.suika-overlay-card {
+  background: #ffffff;
+  border: 1px solid #fbcfe8;
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  max-width: 300px;
+  width: 100%;
+  box-shadow: 0 12px 28px rgba(219, 39, 119, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.suika-evo-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.suika-evo-chip {
+  background: #fdf2f8;
+  border: 1px solid #fbcfe8;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #831843;
+}
+
+@media (max-width: 860px) {
+  .suika-layout {
+    grid-template-columns: 1fr;
+  }
+}

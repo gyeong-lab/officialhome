@@ -11,7 +11,7 @@
   <link rel="icon" type="image/jpeg" href="/static/images/logo.jpg?v=20261120b" />
   <link rel="apple-touch-icon" href="/static/images/logo.jpg?v=20261120b" />
   <link rel="manifest" href="/static/manifest.webmanifest" />
-  <link rel="stylesheet" href="/static/styles.css?v=20261120g" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261122a" />
 </head>
 <body>
   <header class="navbar">
@@ -32,6 +32,7 @@
         <button class="nav-btn" data-page="emoticons">이모티콘</button>
         <button class="nav-btn" data-page="calendar">캘린더</button>
         <button class="nav-btn" data-page="points">포인트 · SOOP연동</button>
+        <button class="nav-btn" data-page="game">🍉 미니게임</button>
         <button class="nav-btn" data-page="gift">선물하기</button>
         <button class="nav-btn hidden" id="nav-admin-btn" data-page="admin">관리자</button>
       </nav>
@@ -483,6 +484,94 @@
       </div>
     </section>
 
+    <!-- MINI GAME PAGE: SUIKA -->
+    <section id="page-game" class="page">
+      <div class="page-head">
+        <div>
+          <h1>🍉 체온 수박게임</h1>
+          <p class="muted">같은 과일을 합쳐 수박을 만드세요! 포인트를 걸고 1,000점 이상 달성하면 보상을 받습니다.</p>
+        </div>
+        <div class="row-gap">
+          <span class="badge-pink" id="suika-my-points">로그인 필요</span>
+        </div>
+      </div>
+
+      <div class="suika-layout">
+        <div class="card suika-main-card">
+          <div class="suika-mode-bar">
+            <div class="row-gap" style="flex-wrap:wrap">
+              <button type="button" class="pill active" id="suika-practice-btn">🎮 무료 연습</button>
+              <button type="button" class="pill suika-stake-btn active" data-stake="100">100P 걸기</button>
+              <button type="button" class="pill suika-stake-btn" data-stake="300">300P 걸기</button>
+              <button type="button" class="pill suika-stake-btn" data-stake="500">500P 걸기</button>
+            </div>
+            <div class="row-gap" style="flex-wrap:wrap">
+              <button type="button" class="btn btn-pink btn-sm" id="suika-start-challenge-btn">🔥 100P 걸고 도전</button>
+              <button type="button" class="btn btn-outline btn-sm hidden" id="suika-cashout-btn">✅ 현재 점수로 정산</button>
+              <button type="button" class="btn btn-outline btn-sm hidden" id="suika-forfeit-btn">🏳️ 포기</button>
+            </div>
+          </div>
+
+          <div class="suika-hud">
+            <div class="suika-hud-box">
+              <span class="muted small">현재 점수</span>
+              <strong id="suika-score">0</strong>
+            </div>
+            <div class="suika-hud-box">
+              <span class="muted small">다음 과일</span>
+              <strong id="suika-next">🍓 딸기</strong>
+            </div>
+            <div class="suika-hud-box suika-hud-wide">
+              <span class="muted small">도전 상태</span>
+              <strong id="suika-target-status">무료 연습 모드 (포인트 미사용)</strong>
+            </div>
+          </div>
+
+          <div class="suika-stage-wrap">
+            <canvas id="suika-canvas"></canvas>
+            <div id="suika-overlay" class="suika-overlay hidden">
+              <div class="suika-overlay-card">
+                <h3 id="suika-overlay-title">🍉 게임 오버!</h3>
+                <p id="suika-overlay-desc" class="muted"></p>
+                <button type="button" class="btn btn-pink" id="suika-overlay-btn">다시하기</button>
+              </div>
+            </div>
+          </div>
+          <p class="muted small mt-8" style="text-align:center">PC: 마우스 이동 후 클릭 (또는 ←/→ + Space) · 모바일: 손가락으로 조준 후 떼기</p>
+        </div>
+
+        <div class="suika-side">
+          <div class="card">
+            <h3>🏆 포인트 도전 보상표</h3>
+            <p class="muted small mt-6">참가비를 걸고 게임을 시작해 아래 점수 이상에 도달하면 자동 정산됩니다. (1,000점 달성 후에는 언제든 <strong>현재 점수로 정산</strong>도 가능!)</p>
+            <div class="list-stack mt-12">
+              <div class="list-item row-between"><span>1,000점 이상</span><span class="badge-pink">1.8배 (100P → 180P)</span></div>
+              <div class="list-item row-between"><span>2,000점 이상</span><span class="badge-pink">2.5배 (100P → 250P)</span></div>
+              <div class="list-item row-between"><span>3,000점 이상</span><span class="badge-pink">4.0배 (100P → 400P)</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>🍒 과일 진화 순서</h3>
+            <div id="suika-evo-strip" class="suika-evo-strip mt-12"></div>
+          </div>
+
+          <div class="card">
+            <div class="row-between">
+              <h3>👑 수박게임 랭킹 TOP 10</h3>
+              <span class="muted small">내 최고: <strong id="suika-my-best">-</strong></span>
+            </div>
+            <div id="suika-leaderboard" class="list-stack mt-12"></div>
+          </div>
+
+          <div class="card">
+            <h3>📜 내 최근 포인트 도전</h3>
+            <div id="suika-my-history" class="list-stack mt-12"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ADMIN PAGE -->
     <section id="page-admin" class="page">
       <div class="page-head">
@@ -676,6 +765,7 @@
   </div>
 
   <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
-  <script src="/static/app.js?v=20261122f"></script>
+  <script src="/static/suika.js?v=20261122a"></script>
+  <script src="/static/app.js?v=20261122g"></script>
 </body>
 </html>
