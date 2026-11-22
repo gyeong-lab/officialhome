@@ -21,6 +21,9 @@ _TABLES_WITH_ID = {
     "gifts",
     "gift_vouchers",
     "emoticons",
+    "suika_runs",
+    "omok_runs",
+    "omok_rooms",
 }
 
 _INSERT_TABLE_RE = re.compile(r"^\s*INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)\b", re.IGNORECASE)
