@@ -2729,17 +2729,13 @@
           textContent: "⛔ 활동금지(영구)",
           onClick: () => applyBan({ mode: "black", reason: reasonIn.value }, `${u.nickname}님 영구 활동금지 처리 완료`),
         }),
+        el("button", {
+          type: "button",
+          className: "btn btn-pink btn-sm",
+          textContent: "✅ 모든 제재 해제",
+          onClick: () => applyBan({ mode: "unban" }, `${u.nickname}님의 모든 제재가 해제되었습니다.`),
+        }),
       ]);
-      if (isBanned) {
-        btnGrid.appendChild(
-          el("button", {
-            type: "button",
-            className: "btn btn-pink btn-sm",
-            textContent: "✅ 정지 해제",
-            onClick: () => applyBan({ mode: "unban" }, `${u.nickname}님 제재가 해제되었습니다.`),
-          })
-        );
-      }
       if (u.id !== state.user.id) {
         btnGrid.appendChild(
           el("button", {
@@ -3280,21 +3276,20 @@
       );
     }
 
-    if (isBanned) {
-      stack.appendChild(
-        el("button", {
-          type: "button",
-          className: "btn btn-outline btn-sm",
-          textContent: "정지 해제",
-          onClick: async () => {
-            await api(`/api/admin/users/${u.id}/ban`, { method: "POST", body: { mode: "unban" } });
-            closeModal();
-            showToast(`${u.nickname}님 정지가 해제되었습니다.`);
-            loadAdminPage();
-          },
-        })
-      );
-    } else {
+    stack.appendChild(
+      el("button", {
+        type: "button",
+        className: "btn btn-pink btn-sm",
+        textContent: "✅ 모든 제재 해제",
+        onClick: async () => {
+          await api(`/api/admin/users/${u.id}/ban`, { method: "POST", body: { mode: "unban" } });
+          closeModal();
+          showToast(`${u.nickname}님의 모든 제재가 해제되었습니다.`);
+          loadAdminPage();
+        },
+      })
+    );
+    if (!isBanned) {
       const daysIn = el("input", { type: "number", min: "1", max: "3650", value: "7", style: "width:90px" });
       const reasonIn = el("input", { type: "text", maxlength: "120", placeholder: "정지 사유", style: "flex:1" });
       stack.appendChild(

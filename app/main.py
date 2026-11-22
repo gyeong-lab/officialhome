@@ -2596,7 +2596,7 @@ def admin_ban_user(user_id: int, body: UserBanBody, admin: dict = Depends(requir
                 "UPDATE users SET ban_until = NULL, is_blacklisted = 0, ban_reason = '' WHERE id = ?",
                 (user_id,),
             )
-    return {"ok": True}
+    return {"ok": True, "ban_until": None, "is_blacklisted": False}
 
 
 @app.patch("/api/admin/users/{user_id}/role")
@@ -2671,14 +2671,37 @@ def admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
     if user_id == admin["id"]:
         raise HTTPException(status_code=400, detail="본인 계정은 삭제할 수 없습니다.")
     with transaction() as conn:
-        target = conn.execute("SELECT id, username, nickname, role FROM users WHERE id = ?", (user_id,)).fetchone()
+        target = conn.execute(
+            "SELECT id, username, nickname, role, soop_id FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
         if not target:
             raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
         if target["role"] == "admin" or target["username"] == "1234gung":
             raise HTTPException(status_code=403, detail="방송인 또는 제작자 계정은 삭제할 수 없습니다.")
         if not _has_broadcaster_power(admin) and target["role"] != "user":
             raise HTTPException(status_code=403, detail="일반팬 계정만 삭제할 수 있습니다.")
-        conn.execute("UPDATE predictions SET created_by = ? WHERE created_by = ?", (admin["id"], user_id))
+
+        # Delete all records tied to this user across the DB
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM post_likes WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE author_id = ?)", (user_id,))
+        conn.execute("DELETE FROM comments WHERE author_id = ?", (user_id,))
+        conn.execute("DELETE FROM comments WHERE post_id IN (SELECT id FROM posts WHERE author_id = ?)", (user_id,))
+        conn.execute("DELETE FROM posts WHERE author_id = ?", (user_id,))
+        conn.execute("DELETE FROM point_ledger WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM redemptions WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM prediction_bets WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM prediction_bets WHERE prediction_id IN (SELECT id FROM predictions WHERE created_by = ?)", (user_id,))
+        conn.execute("DELETE FROM predictions WHERE created_by = ?", (user_id,))
+        conn.execute("DELETE FROM gifts WHERE sender_id = ? OR recipient_id = ?", (user_id, user_id))
+        conn.execute("DELETE FROM gift_vouchers WHERE owner_id = ?", (user_id,))
+        conn.execute("UPDATE gift_vouchers SET issued_by = NULL WHERE issued_by = ?", (user_id,))
+        conn.execute("UPDATE gift_vouchers SET received_from = NULL WHERE received_from = ?", (user_id,))
+        conn.execute("UPDATE gift_vouchers SET opened_by = NULL WHERE opened_by = ?", (user_id,))
+        conn.execute("UPDATE emoticons SET created_by = NULL WHERE created_by = ?", (user_id,))
+        if target["soop_id"]:
+            conn.execute("DELETE FROM soop_chat_tracker WHERE soop_id = ?", (target["soop_id"],))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     return {"ok": True, "deleted_username": target["username"]}
 
