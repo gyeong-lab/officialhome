@@ -52,13 +52,15 @@
     lastDropMs: 0,
     dangerTimer: 0,
     pointerActive: false,
+    nextCutPercent: 0,
     rules: {
-      stakes: [100, 300, 500],
+      stakes: [100],
       tiers: [
-        { min_score: 3000, multiplier: 4.0, label: "3,000점 이상" },
-        { min_score: 2000, multiplier: 2.5, label: "2,000점 이상" },
-        { min_score: 1000, multiplier: 1.8, label: "1,000점 이상" },
+        { min_score: 5000, base_reward: 10000, label: "5,000점 이상" },
+        { min_score: 2000, base_reward: 3000, label: "2,000점 이상" },
+        { min_score: 1000, base_reward: 1000, label: "1,000점 이상" },
       ],
+      diminishing_cuts: [0, 50, 70, 90],
     },
     apiHelper: null,
     getUser: null,
@@ -525,11 +527,13 @@
         });
         game.activeRunId = null;
         game.activeStake = 0;
+        if (typeof res.next_cut_percent === "number") game.nextCutPercent = res.next_cut_percent;
         if (game.onPointsChanged) game.onPointsChanged(res.points);
         const net = res.net;
+        const cutNote = res.cut_percent > 0 ? ` (-${res.cut_percent}% 차감 적용)` : "";
         const msg =
           res.reward > 0
-            ? `🎉 목표 달성! ${res.reward.toLocaleString()} P 획득 (순수익 ${net >= 0 ? "+" : ""}${net.toLocaleString()} P)`
+            ? `🎉 목표 달성! ${res.reward.toLocaleString()} P 획득${cutNote} (순수익 ${net >= 0 ? "+" : ""}${net.toLocaleString()} P)`
             : `아쉽게도 1,000점 미달성으로 참가비(${res.stake.toLocaleString()} P)를 잃었습니다.`;
         showOverlay(
           manualCashout ? "✅ 정산 완료!" : "🍉 게임 오버!",
@@ -619,13 +623,14 @@
     }
     if (targetEl) {
       if (game.mode === "challenge" && game.activeRunId) {
-        let est = 0;
-        if (game.score >= 3000) est = Math.round(game.activeStake * 4.0);
-        else if (game.score >= 2000) est = Math.round(game.activeStake * 2.5);
-        else if (game.score >= 1000) est = Math.round(game.activeStake * 1.8);
+        let base = 0;
+        if (game.score >= 5000) base = 10000;
+        else if (game.score >= 2000) base = 3000;
+        else if (game.score >= 1000) base = 1000;
+        const est = Math.round((base * (100 - game.nextCutPercent)) / 100);
         targetEl.textContent =
           est > 0
-            ? `🔥 현재 예상 보상: ${est.toLocaleString()} P`
+            ? `🔥 현재 예상 보상: ${est.toLocaleString()} P${game.nextCutPercent > 0 ? ` (-${game.nextCutPercent}%)` : ""}`
             : `목표 1,000점까지 ${Math.max(0, 1000 - game.score).toLocaleString()}점 남음`;
       } else {
         targetEl.textContent = "무료 연습 모드 (포인트 미사용)";
@@ -645,6 +650,23 @@
     document.querySelectorAll(".suika-stake-btn").forEach((btn) => {
       const val = Number(btn.dataset.stake);
       btn.classList.toggle("active", val === game.selectedStake);
+    });
+
+    const rateBadge = document.getElementById("suika-next-rate-badge");
+    if (rateBadge) {
+      rateBadge.textContent =
+        game.nextCutPercent === 0
+          ? "첫 보상 100% 적용"
+          : `다음 보상 -${game.nextCutPercent}% (${100 - game.nextCutPercent}% 지급)`;
+    }
+
+    document.querySelectorAll("#suika-reward-table [data-base]").forEach((badge) => {
+      const base = Number(badge.dataset.base || 0);
+      const actual = Math.round((base * (100 - game.nextCutPercent)) / 100);
+      badge.textContent =
+        game.nextCutPercent > 0
+          ? `${actual.toLocaleString()} P (기본 ${base.toLocaleString()}P)`
+          : `${base.toLocaleString()} P`;
     });
 
     const startChallengeBtn = document.getElementById("suika-start-challenge-btn");
@@ -702,6 +724,7 @@
       }
 
       const me = await game.apiHelper("/api/games/suika/me");
+      game.nextCutPercent = Number(me.next_cut_percent || 0);
       if (bestEl) bestEl.textContent = `${Number(me.best_score || 0).toLocaleString()}점`;
       if (me.active_run && !game.activeRunId) {
         game.activeRunId = me.active_run.id;

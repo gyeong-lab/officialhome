@@ -2844,25 +2844,40 @@ def delete_emoticon(emoticon_id: int, staff: dict = Depends(require_admin)):
 # Mini-Game: Suika (수박게임) + Point Challenge
 # ---------------------------------------------------------------------------
 
-SUIKA_STAKES = (100, 300, 500)
+SUIKA_STAKES = (100,)
 SUIKA_REWARD_TIERS = (
-    {"min_score": 3000, "multiplier": 4.0, "label": "3,000점 이상"},
-    {"min_score": 2000, "multiplier": 2.5, "label": "2,000점 이상"},
-    {"min_score": 1000, "multiplier": 1.8, "label": "1,000점 이상"},
+    {"min_score": 5000, "base_reward": 10000, "label": "5,000점 이상"},
+    {"min_score": 2000, "base_reward": 3000, "label": "2,000점 이상"},
+    {"min_score": 1000, "base_reward": 1000, "label": "1,000점 이상"},
 )
+# First reward: 100% (0% cut), 2nd: -50%, 3rd: -70%, 4th+: -90%
+SUIKA_DIMINISHING_CUTS = (0, 50, 70, 90)
 
 
-def compute_suika_reward(stake: int, score: int) -> int:
+def suika_cut_percent_for_count(prior_reward_count: int) -> int:
+    idx = max(0, min(len(SUIKA_DIMINISHING_CUTS) - 1, prior_reward_count))
+    return SUIKA_DIMINISHING_CUTS[idx]
+
+
+def compute_suika_reward(score: int, prior_reward_count: int) -> tuple[int, int, int]:
+    """Return (base_reward, cut_percent, final_reward)."""
+    base_reward = 0
     for tier in SUIKA_REWARD_TIERS:
         if score >= tier["min_score"]:
-            return int(round(stake * tier["multiplier"]))
-    return 0
+            base_reward = int(tier["base_reward"])
+            break
+    cut_percent = suika_cut_percent_for_count(prior_reward_count)
+    if base_reward <= 0:
+        return 0, cut_percent, 0
+    final_reward = int(round(base_reward * (100 - cut_percent) / 100))
+    return base_reward, cut_percent, final_reward
 
 
 def suika_rules_payload() -> dict:
     return {
         "stakes": list(SUIKA_STAKES),
         "tiers": list(SUIKA_REWARD_TIERS),
+        "diminishing_cuts": list(SUIKA_DIMINISHING_CUTS),
     }
 
 
@@ -2902,12 +2917,15 @@ def get_my_suika_stats(session: dict = Depends(require_user)):
             SELECT COALESCE(MAX(score), 0) AS best_score,
                    COUNT(*) AS total_runs,
                    COALESCE(SUM(reward), 0) AS total_reward,
-                   COALESCE(SUM(stake), 0) AS total_stake
+                   COALESCE(SUM(stake), 0) AS total_stake,
+                   SUM(CASE WHEN reward > 0 THEN 1 ELSE 0 END) AS reward_count
             FROM suika_runs
             WHERE user_id = ? AND status = 'finished'
             """,
             (session["id"],),
         ).fetchone()
+        reward_count = int(summary["reward_count"] or 0) if summary else 0
+        next_cut = suika_cut_percent_for_count(reward_count)
         active_row = conn.execute(
             """
             SELECT id, stake, created_at
@@ -2934,6 +2952,8 @@ def get_my_suika_stats(session: dict = Depends(require_user)):
             "total_runs": int(summary["total_runs"]) if summary else 0,
             "total_reward": int(summary["total_reward"]) if summary else 0,
             "total_stake": int(summary["total_stake"]) if summary else 0,
+            "reward_count": reward_count,
+            "next_cut_percent": next_cut,
             "active_run": dict(active_row) if active_row else None,
             "recent_runs": [dict(r) for r in recent_rows],
         }
@@ -2954,7 +2974,7 @@ def start_suika_challenge(
     ):
         raise HTTPException(status_code=429, detail="요청이 너무 많습니다. 잠시 후 다시 시도해주세요.")
     if body.stake not in SUIKA_STAKES:
-        raise HTTPException(status_code=400, detail="유효하지 않은 참가비입니다. (100 / 300 / 500 P)")
+        raise HTTPException(status_code=400, detail="유효하지 않은 참가비입니다. (100 P)")
 
     now = utc_now_iso()
     with transaction() as conn:
@@ -3032,7 +3052,12 @@ def finish_suika_challenge(
             raise HTTPException(status_code=400, detail="비정상적인 게임 기록으로 판정되어 정산할 수 없습니다.")
 
         stake = int(run["stake"])
-        reward = compute_suika_reward(stake, body.score)
+        prior_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM suika_runs WHERE user_id = ? AND status = 'finished' AND reward > 0",
+            (session["id"],),
+        ).fetchone()
+        prior_reward_count = int(prior_row["cnt"]) if prior_row else 0
+        base_reward, cut_percent, reward = compute_suika_reward(body.score, prior_reward_count)
 
         cur = conn.execute(
             """
@@ -3063,8 +3088,11 @@ def finish_suika_challenge(
         "run_id": body.run_id,
         "score": body.score,
         "stake": stake,
+        "base_reward": base_reward,
+        "cut_percent": cut_percent,
         "reward": reward,
         "net": reward - stake,
+        "next_cut_percent": suika_cut_percent_for_count(prior_reward_count + (1 if reward > 0 else 0)),
         "points": new_balance,
     }
 

@@ -368,8 +368,10 @@ class SecurityAndPointsTests(unittest.TestCase):
             {"run_id": run_id, "score": 1200, "max_tier": 7, "merges_count": 32, "duration_sec": 25},
         )
         self.assertEqual(s_win, 200)
-        self.assertEqual(win_data["reward"], 180)
-        self.assertEqual(win_data["points"], 2080)
+        # 1st reward: 1,000P base (0% cut) -> 1900 + 1000 = 2900
+        self.assertEqual(win_data["reward"], 1000)
+        self.assertEqual(win_data["cut_percent"], 0)
+        self.assertEqual(win_data["points"], 2900)
 
         # Double settlement on the same run is rejected
         s_dup, _ = player.request(
@@ -379,10 +381,34 @@ class SecurityAndPointsTests(unittest.TestCase):
         )
         self.assertEqual(s_dup, 409)
 
-        # Leaderboard reflects the finished run
+        # Verify diminishing rewards: 2nd (-50%), 3rd (-70%), 4th (-90%)
+        for expected_score, expected_cut, expected_reward in [
+            (2200, 50, 1500),   # 3000 * 0.5 = 1500
+            (5100, 70, 3000),   # 10000 * 0.3 = 3000
+            (1100, 90, 100),    # 1000 * 0.1 = 100
+        ]:
+            s_s, d_s = player.request("POST", "/api/games/suika/start", {"stake": 100})
+            self.assertEqual(s_s, 200)
+            rid = d_s["run_id"]
+            conn = get_connection()
+            try:
+                conn.execute("UPDATE suika_runs SET created_at = '2026-01-01T00:00:00+00:00' WHERE id = ?", (rid,))
+                conn.commit()
+            finally:
+                conn.close()
+            s_f, d_f = player.request(
+                "POST",
+                "/api/games/suika/finish",
+                {"run_id": rid, "score": expected_score, "max_tier": 8, "merges_count": 40, "duration_sec": 30},
+            )
+            self.assertEqual(s_f, 200)
+            self.assertEqual(d_f["cut_percent"], expected_cut)
+            self.assertEqual(d_f["reward"], expected_reward)
+
+        # Leaderboard reflects the highest finished run (5100)
         s_lb, lb_data = player.request("GET", "/api/games/suika/leaderboard")
         self.assertEqual(s_lb, 200)
-        self.assertTrue(any(r["nickname"] == "수박유저" and r["best_score"] == 1200 for r in lb_data["leaderboard"]))
+        self.assertTrue(any(r["nickname"] == "수박유저" and r["best_score"] == 5100 for r in lb_data["leaderboard"]))
 
 
 if __name__ == "__main__":
