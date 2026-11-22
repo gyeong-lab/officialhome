@@ -3192,7 +3192,25 @@
   }
 
   function confirmDeleteUser(u) {
-    const confirmForm = el("form", { className: "form-stack" }, [
+    const errBox = el("div", { className: "muted small", style: "color:#b91c1c" });
+    const confirmBtn = el("button", { type: "button", className: "btn btn-danger btn-sm", textContent: "탈퇴 확정" });
+    confirmBtn.addEventListener("click", async () => {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "처리 중...";
+      errBox.textContent = "";
+      try {
+        await api(`/api/admin/users/${u.id}`, { method: "DELETE" });
+        closeModal();
+        showToast(`${u.nickname} (${u.username}) 회원이 탈퇴(삭제) 처리되었습니다.`);
+        await loadAdminPage();
+      } catch (err) {
+        errBox.textContent = err.message || "삭제 중 오류가 발생했습니다.";
+        showToast(err.message || "삭제 중 오류가 발생했습니다.");
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "탈퇴 확정";
+      }
+    });
+    const confirmBox = el("div", { className: "form-stack" }, [
       el("p", {
         textContent: `정말 '${u.nickname} (${u.username})' 회원을 탈퇴(삭제) 시키겠습니까?`,
       }),
@@ -3200,23 +3218,13 @@
         className: "muted small",
         textContent: "탈퇴 처리 후에는 되돌릴 수 없으며, 해당 계정의 활동 데이터도 함께 삭제됩니다.",
       }),
+      errBox,
       el("div", { className: "modal-footer-end" }, [
         el("button", { type: "button", className: "btn btn-outline btn-sm", textContent: "취소", onClick: closeModal }),
-        el("button", { type: "submit", className: "btn btn-danger btn-sm", textContent: "탈퇴 확정" }),
+        confirmBtn,
       ]),
     ]);
-    confirmForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      try {
-        await api(`/api/admin/users/${u.id}`, { method: "DELETE" });
-        closeModal();
-        showToast(`${u.nickname} (${u.username}) 회원이 탈퇴 처리되었습니다.`);
-        loadAdminPage();
-      } catch (err) {
-        showToast(err.message);
-      }
-    });
-    openModal("회원 강제 탈퇴 확인", confirmForm);
+    openModal("회원 강제 탈퇴 확인", confirmBox);
   }
 
   function openUserManageModal(u, isBanned) {
