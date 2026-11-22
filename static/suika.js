@@ -13,16 +13,13 @@
 
   const FRUITS = [
     { tier: 1, name: "체리", emoji: "🍒", r: 16, score: 2, color: "#fb7185", rim: "#be123c" },
-    { tier: 2, name: "딸기", emoji: "🍓", r: 22, score: 4, color: "#f43f5e", rim: "#9f1239" },
-    { tier: 3, name: "포도", emoji: "🍇", r: 28, score: 8, color: "#a855f7", rim: "#6b21a8" },
-    { tier: 4, name: "한라봉", emoji: "🍊", r: 34, score: 14, color: "#fb923c", rim: "#c2410c" },
-    { tier: 5, name: "오렌지", emoji: "🟠", r: 41, score: 22, color: "#f97316", rim: "#9a3412" },
-    { tier: 6, name: "사과", emoji: "🍎", r: 49, score: 32, color: "#ef4444", rim: "#991b1b" },
-    { tier: 7, name: "배", emoji: "🍐", r: 57, score: 45, color: "#a3e635", rim: "#4d7c0f" },
-    { tier: 8, name: "복숭아", emoji: "🍑", r: 66, score: 60, color: "#fda4af", rim: "#e11d48" },
-    { tier: 9, name: "파인애플", emoji: "🍍", r: 75, score: 80, color: "#facc15", rim: "#a16207" },
-    { tier: 10, name: "멜론", emoji: "🍈", r: 85, score: 105, color: "#4ade80", rim: "#15803d" },
-    { tier: 11, name: "수박", emoji: "🍉", r: 98, score: 150, color: "#16a34a", rim: "#14532d" },
+    { tier: 2, name: "딸기", emoji: "🍓", r: 23, score: 5, color: "#f43f5e", rim: "#9f1239" },
+    { tier: 3, name: "포도", emoji: "🍇", r: 31, score: 10, color: "#a855f7", rim: "#6b21a8" },
+    { tier: 4, name: "귤", emoji: "🍊", r: 40, score: 18, color: "#fb923c", rim: "#c2410c" },
+    { tier: 5, name: "사과", emoji: "🍎", r: 50, score: 28, color: "#ef4444", rim: "#991b1b" },
+    { tier: 6, name: "복숭아", emoji: "🍑", r: 61, score: 42, color: "#fda4af", rim: "#e11d48" },
+    { tier: 7, name: "멜론", emoji: "🍈", r: 74, score: 65, color: "#4ade80", rim: "#15803d" },
+    { tier: 8, name: "수박", emoji: "🍉", r: 89, score: 100, color: "#16a34a", rim: "#14532d" },
   ];
 
   const game = {
@@ -69,7 +66,7 @@
   };
 
   function randomDropTier() {
-    const weights = [30, 28, 20, 14, 8];
+    const weights = [35, 30, 22, 13];
     const total = weights.reduce((a, b) => a + b, 0);
     let r = Math.random() * total;
     for (let i = 0; i < weights.length; i++) {
@@ -269,7 +266,7 @@
         const my = (a.y + b.y) / 2;
         game.mergesCount += 1;
 
-        if (a.tier >= 11) {
+        if (a.tier >= FRUITS.length) {
           // Two watermelons pop!
           const bonus = 250;
           game.score += bonus;
@@ -359,7 +356,7 @@
     ctx.stroke();
 
     // Watermelon stripes
-    if (tier === 11) {
+    if (tier === FRUITS.length) {
       ctx.save();
       ctx.beginPath();
       ctx.arc(0, 0, r - 2, 0, Math.PI * 2);
