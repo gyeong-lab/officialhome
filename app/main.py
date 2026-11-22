@@ -316,6 +316,22 @@ class SuikaForfeitBody(BaseModel):
     run_id: int
 
 
+class OmokStartBody(BaseModel):
+    difficulty: Literal["easy", "normal", "hard"] = "normal"
+    forfeit_existing: bool = False
+
+
+class OmokFinishBody(BaseModel):
+    run_id: int
+    result: Literal["win", "lose", "draw"]
+    moves_count: int = Field(ge=0, le=225)
+    duration_sec: int = Field(ge=0, le=86400)
+
+
+class OmokForfeitBody(BaseModel):
+    run_id: int
+
+
 class PredictionCreateBody(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     options: list[str] = Field(min_length=2, max_length=10)
@@ -3113,6 +3129,264 @@ def forfeit_suika_challenge(
         )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="진행 중인 도전을 찾을 수 없습니다.")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Mini-Game: Omok (오목) + AI Point Challenge
+# ---------------------------------------------------------------------------
+
+OMOK_STAKE = 100
+OMOK_REWARDS = {
+    "easy": 200,
+    "normal": 400,
+    "hard": 800,
+}
+OMOK_DIFFICULTY_LABELS = {
+    "easy": "쉬움",
+    "normal": "보통",
+    "hard": "어려움",
+}
+
+
+def omok_rules_payload() -> dict:
+    return {
+        "stake": OMOK_STAKE,
+        "rewards": dict(OMOK_REWARDS),
+        "labels": dict(OMOK_DIFFICULTY_LABELS),
+    }
+
+
+@app.get("/api/games/omok/leaderboard")
+def get_omok_leaderboard():
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT u.id AS user_id,
+                   u.nickname,
+                   SUM(CASE WHEN r.result = 'win' THEN 1 ELSE 0 END) AS wins,
+                   COUNT(*) AS games_played,
+                   COALESCE(SUM(r.reward), 0) AS total_reward
+            FROM omok_runs r
+            JOIN users u ON u.id = r.user_id
+            WHERE r.result IN ('win', 'lose', 'draw')
+            GROUP BY u.id, u.nickname
+            HAVING SUM(CASE WHEN r.result = 'win' THEN 1 ELSE 0 END) > 0
+            ORDER BY wins DESC, total_reward DESC, games_played ASC
+            LIMIT 10
+            """
+        ).fetchall()
+        return {
+            "rules": omok_rules_payload(),
+            "leaderboard": [dict(row) for row in rows],
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/games/omok/me")
+def get_my_omok_stats(session: dict = Depends(require_user)):
+    conn = get_connection()
+    try:
+        summary = conn.execute(
+            """
+            SELECT SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) AS wins,
+                   SUM(CASE WHEN result = 'lose' THEN 1 ELSE 0 END) AS losses,
+                   SUM(CASE WHEN result = 'draw' THEN 1 ELSE 0 END) AS draws,
+                   COALESCE(SUM(reward), 0) AS total_reward
+            FROM omok_runs
+            WHERE user_id = ? AND result IN ('win', 'lose', 'draw')
+            """,
+            (session["id"],),
+        ).fetchone()
+        active_row = conn.execute(
+            """
+            SELECT id, difficulty, stake, created_at
+            FROM omok_runs
+            WHERE user_id = ? AND result = 'active'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (session["id"],),
+        ).fetchone()
+        recent_rows = conn.execute(
+            """
+            SELECT id, difficulty, stake, result, moves_count, reward, created_at, finished_at
+            FROM omok_runs
+            WHERE user_id = ? AND result != 'active'
+            ORDER BY id DESC
+            LIMIT 10
+            """,
+            (session["id"],),
+        ).fetchall()
+        return {
+            "rules": omok_rules_payload(),
+            "wins": int(summary["wins"] or 0) if summary else 0,
+            "losses": int(summary["losses"] or 0) if summary else 0,
+            "draws": int(summary["draws"] or 0) if summary else 0,
+            "total_reward": int(summary["total_reward"] or 0) if summary else 0,
+            "active_run": dict(active_row) if active_row else None,
+            "recent_runs": [dict(r) for r in recent_rows],
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/api/games/omok/start")
+def start_omok_challenge(
+    body: OmokStartBody,
+    request: Request,
+    session: dict = Depends(require_csrf),
+):
+    if not rate_limiter.allow(
+        f"omok_start:{session['id']}:{_client_ip(request)}",
+        limit=20,
+        window_seconds=60,
+    ):
+        raise HTTPException(status_code=429, detail="요청이 너무 많습니다. 잠시 후 다시 시도해주세요.")
+
+    now = utc_now_iso()
+    with transaction() as conn:
+        active = conn.execute(
+            "SELECT id, difficulty, stake FROM omok_runs WHERE user_id = ? AND result = 'active' ORDER BY id DESC LIMIT 1",
+            (session["id"],),
+        ).fetchone()
+        if active:
+            if not body.forfeit_existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail="이미 진행 중인 오목 대국이 있습니다. 기존 대국을 포기하고 새로 시작할 수 있습니다.",
+                )
+            conn.execute(
+                "UPDATE omok_runs SET result = 'forfeited', finished_at = ? WHERE id = ? AND result = 'active'",
+                (now, active["id"]),
+            )
+
+        diff_label = OMOK_DIFFICULTY_LABELS[body.difficulty]
+        try:
+            _, new_balance = apply_point_delta(
+                conn,
+                session["id"],
+                -OMOK_STAKE,
+                f"오목 AI({diff_label}) 포인트 도전 (-{OMOK_STAKE:,}P)",
+                "omok_stake",
+                idempotency_key=f"omok:stake:{session['id']}:{uuid.uuid4().hex}",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        cur = conn.execute(
+            """
+            INSERT INTO omok_runs (user_id, difficulty, stake, result, moves_count, duration_sec, reward, created_at)
+            VALUES (?, ?, ?, 'active', 0, 0, 0, ?)
+            """,
+            (session["id"], body.difficulty, OMOK_STAKE, now),
+        )
+        run_id = cur.lastrowid
+
+    return {
+        "run_id": run_id,
+        "difficulty": body.difficulty,
+        "stake": OMOK_STAKE,
+        "points": new_balance,
+        "rules": omok_rules_payload(),
+    }
+
+
+@app.post("/api/games/omok/finish")
+def finish_omok_challenge(
+    body: OmokFinishBody,
+    session: dict = Depends(require_csrf),
+):
+    now = utc_now_iso()
+    with transaction() as conn:
+        run = conn.execute(
+            "SELECT id, user_id, difficulty, stake, result, created_at FROM omok_runs WHERE id = ? AND user_id = ?",
+            (body.run_id, session["id"]),
+        ).fetchone()
+        if not run:
+            raise HTTPException(status_code=404, detail="오목 대국 기록을 찾을 수 없습니다.")
+        if run["result"] != "active":
+            raise HTTPException(status_code=409, detail="이미 정산되었거나 종료된 대국입니다.")
+
+        elapsed_sec = 0
+        try:
+            started_dt = datetime.fromisoformat(run["created_at"])
+            if started_dt.tzinfo is None:
+                started_dt = started_dt.replace(tzinfo=timezone.utc)
+            elapsed_sec = max(0, int((datetime.now(timezone.utc) - started_dt).total_seconds()))
+        except Exception:
+            elapsed_sec = body.duration_sec
+
+        if body.result == "win" and (body.moves_count < 9 or elapsed_sec < 3):
+            raise HTTPException(status_code=400, detail="비정상적인 대국 기록으로 판정되어 정산할 수 없습니다.")
+
+        stake = int(run["stake"])
+        difficulty = run["difficulty"]
+        diff_label = OMOK_DIFFICULTY_LABELS.get(difficulty, difficulty)
+        if body.result == "win":
+            reward = OMOK_REWARDS.get(difficulty, 200)
+            reason = f"오목 AI({diff_label}) 승리 보상 (+{reward:,}P)"
+        elif body.result == "draw":
+            reward = stake
+            reason = f"오목 AI({diff_label}) 무승부 환급 (+{reward:,}P)"
+        else:
+            reward = 0
+            reason = ""
+
+        cur = conn.execute(
+            """
+            UPDATE omok_runs
+            SET result = ?, moves_count = ?, duration_sec = ?, reward = ?, finished_at = ?
+            WHERE id = ? AND user_id = ? AND result = 'active'
+            """,
+            (body.result, body.moves_count, body.duration_sec, reward, now, body.run_id, session["id"]),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=409, detail="이미 정산된 대국입니다.")
+
+        if reward > 0:
+            _, new_balance = apply_point_delta(
+                conn,
+                session["id"],
+                reward,
+                reason,
+                "omok_reward",
+                idempotency_key=f"omok:reward:{body.run_id}",
+            )
+        else:
+            row = conn.execute("SELECT points FROM users WHERE id = ?", (session["id"],)).fetchone()
+            new_balance = int(row["points"]) if row else 0
+
+    return {
+        "ok": True,
+        "run_id": body.run_id,
+        "result": body.result,
+        "difficulty": difficulty,
+        "stake": stake,
+        "reward": reward,
+        "net": reward - stake,
+        "points": new_balance,
+    }
+
+
+@app.post("/api/games/omok/forfeit")
+def forfeit_omok_challenge(
+    body: OmokForfeitBody,
+    session: dict = Depends(require_csrf),
+):
+    with transaction() as conn:
+        cur = conn.execute(
+            """
+            UPDATE omok_runs
+            SET result = 'forfeited', finished_at = ?
+            WHERE id = ? AND user_id = ? AND result = 'active'
+            """,
+            (utc_now_iso(), body.run_id, session["id"]),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="진행 중인 대국을 찾을 수 없습니다.")
     return {"ok": True}
 
 

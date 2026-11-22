@@ -410,6 +410,63 @@ class SecurityAndPointsTests(unittest.TestCase):
         self.assertEqual(s_lb, 200)
         self.assertTrue(any(r["nickname"] == "수박유저" and r["best_score"] == 5100 for r in lb_data["leaderboard"]))
 
+    def test_omok_game_points_and_anticheat(self) -> None:
+        from app.database import get_connection
+
+        player = ApiClient(self.base_url)
+        s_reg, reg_data = player.request(
+            "POST",
+            "/api/auth/register",
+            {"username": "omokfan", "nickname": "오목고수", "password": "Password!123"},
+        )
+        self.assertEqual(s_reg, 200)
+        player.csrf_token = reg_data["csrf_token"]
+        self.assertEqual(reg_data["user"]["points"], 2000)
+
+        # Start hard AI match (100P stake -> 1900P)
+        s_start, start_data = player.request("POST", "/api/games/omok/start", {"difficulty": "hard"})
+        self.assertEqual(s_start, 200)
+        self.assertEqual(start_data["points"], 1900)
+        run_id = start_data["run_id"]
+
+        # Instant win (<3s or <9 moves) is blocked
+        s_cheat, _ = player.request(
+            "POST",
+            "/api/games/omok/finish",
+            {"run_id": run_id, "result": "win", "moves_count": 5, "duration_sec": 1},
+        )
+        self.assertEqual(s_cheat, 400)
+
+        # Realistic elapsed time -> hard win awards 800P (1900 + 800 = 2700P)
+        conn = get_connection()
+        try:
+            conn.execute("UPDATE omok_runs SET created_at = '2026-01-01T00:00:00+00:00' WHERE id = ?", (run_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        s_win, win_data = player.request(
+            "POST",
+            "/api/games/omok/finish",
+            {"run_id": run_id, "result": "win", "moves_count": 19, "duration_sec": 25},
+        )
+        self.assertEqual(s_win, 200)
+        self.assertEqual(win_data["reward"], 800)
+        self.assertEqual(win_data["points"], 2700)
+
+        # Double settlement is rejected
+        s_dup, _ = player.request(
+            "POST",
+            "/api/games/omok/finish",
+            {"run_id": run_id, "result": "win", "moves_count": 19, "duration_sec": 25},
+        )
+        self.assertEqual(s_dup, 409)
+
+        # Leaderboard reflects 1 win
+        s_lb, lb_data = player.request("GET", "/api/games/omok/leaderboard")
+        self.assertEqual(s_lb, 200)
+        self.assertTrue(any(r["nickname"] == "오목고수" and r["wins"] == 1 for r in lb_data["leaderboard"]))
+
 
 if __name__ == "__main__":
     unittest.main()

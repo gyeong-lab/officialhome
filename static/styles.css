@@ -1529,3 +1529,26 @@ html, body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Omok Mini-Game */
+.omok-stage-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 450px;
+  margin: 0 auto;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 2px solid #d97706;
+  box-shadow: 0 10px 26px rgba(180, 83, 9, 0.14);
+  background: #f7d59c;
+}
+
+#omok-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  touch-action: manipulation;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}

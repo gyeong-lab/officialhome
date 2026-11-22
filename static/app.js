@@ -2250,9 +2250,11 @@
     });
   }
 
+  let activeGameTab = "suika";
+  let gameTabsBound = false;
+
   function loadGamePage() {
-    if (!window.ChaeonSuika || typeof window.ChaeonSuika.initPage !== "function") return;
-    window.ChaeonSuika.initPage({
+    const gameCtx = {
       api,
       getUser: () => state.user,
       onPointsChanged: (newPoints) => {
@@ -2263,7 +2265,33 @@
         }
       },
       showToast,
-    });
+    };
+
+    const showGameTab = (tabName) => {
+      activeGameTab = tabName === "omok" ? "omok" : "suika";
+      document.querySelectorAll("#game-tabs .pill").forEach((b) => {
+        b.classList.toggle("active", b.dataset.gtab === activeGameTab);
+      });
+      const suikaPanel = document.getElementById("game-panel-suika");
+      const omokPanel = document.getElementById("game-panel-omok");
+      if (suikaPanel) suikaPanel.classList.toggle("hidden", activeGameTab !== "suika");
+      if (omokPanel) omokPanel.classList.toggle("hidden", activeGameTab !== "omok");
+
+      if (activeGameTab === "suika" && window.ChaeonSuika) {
+        window.ChaeonSuika.initPage(gameCtx);
+      } else if (activeGameTab === "omok" && window.ChaeonOmok) {
+        window.ChaeonOmok.initPage(gameCtx);
+      }
+    };
+
+    if (!gameTabsBound) {
+      gameTabsBound = true;
+      document.querySelectorAll("#game-tabs .pill").forEach((btn) => {
+        btn.addEventListener("click", () => showGameTab(btn.dataset.gtab));
+      });
+    }
+
+    showGameTab(activeGameTab);
   }
 
   // Gift Page
@@ -3114,9 +3142,11 @@
       openModal("새 승부예측 만들기", form);
     });
 
-    function loadGamePage() {
-    if (!window.ChaeonSuika || typeof window.ChaeonSuika.initPage !== "function") return;
-    window.ChaeonSuika.initPage({
+    let activeGameTab = "suika";
+  let gameTabsBound = false;
+
+  function loadGamePage() {
+    const gameCtx = {
       api,
       getUser: () => state.user,
       onPointsChanged: (newPoints) => {
@@ -3127,7 +3157,33 @@
         }
       },
       showToast,
-    });
+    };
+
+    const showGameTab = (tabName) => {
+      activeGameTab = tabName === "omok" ? "omok" : "suika";
+      document.querySelectorAll("#game-tabs .pill").forEach((b) => {
+        b.classList.toggle("active", b.dataset.gtab === activeGameTab);
+      });
+      const suikaPanel = document.getElementById("game-panel-suika");
+      const omokPanel = document.getElementById("game-panel-omok");
+      if (suikaPanel) suikaPanel.classList.toggle("hidden", activeGameTab !== "suika");
+      if (omokPanel) omokPanel.classList.toggle("hidden", activeGameTab !== "omok");
+
+      if (activeGameTab === "suika" && window.ChaeonSuika) {
+        window.ChaeonSuika.initPage(gameCtx);
+      } else if (activeGameTab === "omok" && window.ChaeonOmok) {
+        window.ChaeonOmok.initPage(gameCtx);
+      }
+    };
+
+    if (!gameTabsBound) {
+      gameTabsBound = true;
+      document.querySelectorAll("#game-tabs .pill").forEach((btn) => {
+        btn.addEventListener("click", () => showGameTab(btn.dataset.gtab));
+      });
+    }
+
+    showGameTab(activeGameTab);
   }
 
   // Gift Page

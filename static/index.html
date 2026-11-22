@@ -11,7 +11,7 @@
   <link rel="icon" type="image/jpeg" href="/static/images/logo.jpg?v=20261120b" />
   <link rel="apple-touch-icon" href="/static/images/logo.jpg?v=20261120b" />
   <link rel="manifest" href="/static/manifest.webmanifest" />
-  <link rel="stylesheet" href="/static/styles.css?v=20261122a" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261122b" />
 </head>
 <body>
   <header class="navbar">
@@ -32,7 +32,7 @@
         <button class="nav-btn" data-page="emoticons">이모티콘</button>
         <button class="nav-btn" data-page="calendar">캘린더</button>
         <button class="nav-btn" data-page="points">포인트 · SOOP연동</button>
-        <button class="nav-btn" data-page="game">🍉 미니게임</button>
+        <button class="nav-btn" data-page="game">🎮 미니게임</button>
         <button class="nav-btn" data-page="gift">선물하기</button>
         <button class="nav-btn hidden" id="nav-admin-btn" data-page="admin">관리자</button>
       </nav>
@@ -484,8 +484,14 @@
       </div>
     </section>
 
-    <!-- MINI GAME PAGE: SUIKA -->
+    <!-- MINI GAME PAGE: SUIKA & OMOK -->
     <section id="page-game" class="page">
+      <div class="tab-pills mb-12" id="game-tabs">
+        <button type="button" class="pill active" data-gtab="suika">🍉 수박게임</button>
+        <button type="button" class="pill" data-gtab="omok">⚫⚪ 오목 (AI 대결)</button>
+      </div>
+
+      <div id="game-panel-suika">
       <div class="page-head">
         <div>
           <h1>🍉 체온 수박게임</h1>
@@ -567,6 +573,88 @@
           <div class="card">
             <h3>📜 내 최근 포인트 도전</h3>
             <div id="suika-my-history" class="list-stack mt-12"></div>
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <div id="game-panel-omok" class="hidden">
+        <div class="page-head">
+          <div>
+            <h1>⚫⚪ 체온 오목 (AI 대결)</h1>
+            <p class="muted">15×15 오목판에서 AI와 대결해 5목을 완성하세요! 난이도별로 포인트 보상을 받을 수 있습니다.</p>
+          </div>
+          <div class="row-gap">
+            <span class="badge-pink" id="omok-my-points">로그인 필요</span>
+          </div>
+        </div>
+
+        <div class="suika-layout">
+          <div class="card suika-main-card">
+            <div class="suika-mode-bar">
+              <div class="row-gap" style="flex-wrap:wrap">
+                <button type="button" class="pill active" id="omok-practice-btn">🎮 무료 연습</button>
+                <button type="button" class="pill omok-diff-btn" data-diff="easy">쉬움 (200P)</button>
+                <button type="button" class="pill omok-diff-btn active" data-diff="normal">보통 (400P)</button>
+                <button type="button" class="pill omok-diff-btn" data-diff="hard">어려움 (800P)</button>
+              </div>
+              <div class="row-gap" style="flex-wrap:wrap">
+                <button type="button" class="btn btn-pink btn-sm" id="omok-start-challenge-btn">🔥 100P 걸고 도전 (승리 400P)</button>
+                <button type="button" class="btn btn-outline btn-sm hidden" id="omok-forfeit-btn">🏳️ 기권</button>
+              </div>
+            </div>
+
+            <div class="suika-hud">
+              <div class="suika-hud-box">
+                <span class="muted small">현재 차례</span>
+                <strong id="omok-turn-status">⚫ 내 차례 (흑돌)</strong>
+              </div>
+              <div class="suika-hud-box">
+                <span class="muted small">진행 수</span>
+                <strong id="omok-moves-count">0수</strong>
+              </div>
+              <div class="suika-hud-box suika-hud-wide">
+                <span class="muted small">대국 상태</span>
+                <strong id="omok-mode-status">무료 연습 (보통 AI)</strong>
+              </div>
+            </div>
+
+            <div class="omok-stage-wrap">
+              <canvas id="omok-canvas"></canvas>
+              <div id="omok-overlay" class="suika-overlay hidden">
+                <div class="suika-overlay-card">
+                  <h3 id="omok-overlay-title">대국 종료</h3>
+                  <p id="omok-overlay-desc" class="muted"></p>
+                  <button type="button" class="btn btn-pink" id="omok-overlay-btn">다시하기</button>
+                </div>
+              </div>
+            </div>
+            <p class="muted small mt-8" style="text-align:center">흑돌(⚫) 선공 · 가로/세로/대각선 5개를 먼저 연결하면 승리합니다.</p>
+          </div>
+
+          <div class="suika-side">
+            <div class="card">
+              <h3>🏆 오목 AI 도전 보상표</h3>
+              <p class="muted small mt-6">참가비 <strong>100P</strong>를 걸고 AI에게 승리하면 난이도별 보상을 받습니다. (무승부 시 100P 환급)</p>
+              <div class="list-stack mt-12">
+                <div class="list-item row-between"><span>쉬움 AI 승리</span><span class="badge-pink">200 P (+100P)</span></div>
+                <div class="list-item row-between"><span>보통 AI 승리</span><span class="badge-pink">400 P (+300P)</span></div>
+                <div class="list-item row-between"><span>어려움 AI 승리</span><span class="badge-pink">800 P (+700P)</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="row-between">
+                <h3>👑 오목 다승 랭킹 TOP 10</h3>
+                <span class="muted small">내 전적: <strong id="omok-my-record">-</strong></span>
+              </div>
+              <div id="omok-leaderboard" class="list-stack mt-12"></div>
+            </div>
+
+            <div class="card">
+              <h3>📜 내 최근 오목 대국</h3>
+              <div id="omok-my-history" class="list-stack mt-12"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -766,6 +854,7 @@
 
   <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
   <script src="/static/suika.js?v=20261122b"></script>
-  <script src="/static/app.js?v=20261122g"></script>
+  <script src="/static/omok.js?v=20261122a"></script>
+  <script src="/static/app.js?v=20261122h"></script>
 </body>
 </html>

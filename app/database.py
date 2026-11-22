@@ -491,6 +491,20 @@ _PG_SCHEMA_STATEMENTS = [
         finished_at TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS omok_runs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        difficulty TEXT NOT NULL DEFAULT 'normal' CHECK(difficulty IN ('easy', 'normal', 'hard')),
+        stake INTEGER NOT NULL DEFAULT 0 CHECK(stake >= 0),
+        result TEXT NOT NULL DEFAULT 'active' CHECK(result IN ('active', 'win', 'lose', 'draw', 'forfeited')),
+        moves_count INTEGER NOT NULL DEFAULT 0 CHECK(moves_count >= 0),
+        duration_sec INTEGER NOT NULL DEFAULT 0 CHECK(duration_sec >= 0),
+        reward INTEGER NOT NULL DEFAULT 0 CHECK(reward >= 0),
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+    )
+    """,
 ]
 
 
@@ -760,6 +774,19 @@ def init_db() -> None:
                 duration_sec INTEGER NOT NULL DEFAULT 0 CHECK(duration_sec >= 0),
                 reward INTEGER NOT NULL DEFAULT 0 CHECK(reward >= 0),
                 status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'finished', 'forfeited')),
+                created_at TEXT NOT NULL,
+                finished_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS omok_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                difficulty TEXT NOT NULL DEFAULT 'normal' CHECK(difficulty IN ('easy', 'normal', 'hard')),
+                stake INTEGER NOT NULL DEFAULT 0 CHECK(stake >= 0),
+                result TEXT NOT NULL DEFAULT 'active' CHECK(result IN ('active', 'win', 'lose', 'draw', 'forfeited')),
+                moves_count INTEGER NOT NULL DEFAULT 0 CHECK(moves_count >= 0),
+                duration_sec INTEGER NOT NULL DEFAULT 0 CHECK(duration_sec >= 0),
+                reward INTEGER NOT NULL DEFAULT 0 CHECK(reward >= 0),
                 created_at TEXT NOT NULL,
                 finished_at TEXT
             );
