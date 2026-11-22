@@ -1050,7 +1050,26 @@
     return ids.slice(0, 3);
   }
 
-  function renderRichPostBody(container, text, includeYoutube = true) {
+  function extractSoopVodEmbeds(text) {
+    const urls = [];
+    const seen = new Set();
+    const regex = /(?:https?:\/\/)?vod\.sooplive\.(?:com|co\.kr)\/player\/(\d+)(?:\/(catch))?(?:\/embed)?/gi;
+    let m;
+    while ((m = regex.exec(text)) !== null) {
+      const id = m[1];
+      const isCatch = Boolean(m[2]);
+      const embedUrl = isCatch
+        ? `https://vod.sooplive.com/player/${id}/catch/embed`
+        : `https://vod.sooplive.com/player/${id}/embed`;
+      if (!seen.has(embedUrl)) {
+        seen.add(embedUrl);
+        urls.push(embedUrl);
+      }
+    }
+    return urls.slice(0, 3);
+  }
+
+  function renderRichPostBody(container, text, includeEmbeds = true) {
     clear(container);
     const parts = String(text || "").split(/(\[\[이모티콘:\d+\]\])/g);
     parts.forEach((part) => {
@@ -1061,7 +1080,7 @@
         container.appendChild(document.createTextNode(part));
       }
     });
-    if (includeYoutube) {
+    if (includeEmbeds) {
       extractYouTubeIds(text || "").forEach((vid) => {
         container.appendChild(
           el("iframe", {
@@ -1069,6 +1088,17 @@
             src: `https://www.youtube-nocookie.com/embed/${vid}`,
             title: "YouTube video",
             allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture",
+            allowfullscreen: "true",
+          })
+        );
+      });
+      extractSoopVodEmbeds(text || "").forEach((embedUrl) => {
+        container.appendChild(
+          el("iframe", {
+            className: "yt-embed",
+            src: embedUrl,
+            title: "SOOP VOD player",
+            allow: "autoplay; fullscreen; picture-in-picture",
             allowfullscreen: "true",
           })
         );
@@ -1209,7 +1239,7 @@
       rows: "7",
       required: "true",
       maxlength: "5000",
-      placeholder: "내용을 입력하세요... (YouTube URL을 붙여넣으면 영상이 자동으로 임베드됩니다)",
+      placeholder: "내용을 입력하세요... (YouTube 또는 SOOP VOD·캐치 URL을 붙여넣으면 영상이 자동으로 임베드됩니다)",
     });
 
     const { toggleBtn: emojiToggleBtn, pickerBox } = buildEmoticonPicker(contentInput, 10);
