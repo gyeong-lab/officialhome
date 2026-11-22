@@ -165,7 +165,7 @@ async def _run_collector_loop(on_chat_message: Callable[[str, str], dict]) -> No
                         collector_state["recent_logs"].appendleft(
                             {
                                 "soop_id": sender_id,
-                                "text": f"+{res.get('awarded')}P · {sender_id}: {message[:30]}",
+                                "text": f"+{res.get('awarded')}P 채팅 적립 ({sender_id})",
                             }
                         )
                     elif res.get("status") == "verified":

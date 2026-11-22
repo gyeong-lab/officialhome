@@ -184,6 +184,14 @@ class SecurityAndPointsTests(unittest.TestCase):
         self.assertEqual(c2_d["status"], "awarded")
         self.assertEqual(c2_d["balance"], 2110)
 
+        # Normal fan cannot forge chat-events without HMAC signature
+        forge_s, _ = fan.request(
+            "POST",
+            "/api/integrations/soop/chat-events",
+            {"soop_id": "my_soop_99", "message": "forged"},
+        )
+        self.assertEqual(forge_s, 403)
+
     def test_03_staff_and_admin_can_edit_delete_all_normal_fan_blocked(self) -> None:
         fan = ApiClient(self.base_url)
         _, fan_data = fan.request(

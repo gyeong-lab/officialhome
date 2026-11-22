@@ -64,12 +64,20 @@ async def on_startup() -> None:
         start_collector(lambda sid, msg: _process_soop_chat_event(sid, msg))
 
 
+def _is_https_request(request: Request) -> bool:
+    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    return request.url.scheme == "https" or proto == "https"
+
+
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if _is_https_request(request):
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' https://static.sooplive.com; "
@@ -389,7 +397,7 @@ def register(body: RegisterBody, request: Request, response: Response):
         value=raw_session,
         httponly=True,
         samesite="lax",
-        secure=False,  # Set True behind HTTPS in production
+        secure=_is_https_request(request),
         max_age=SESSION_TTL_SECONDS,
         path="/",
     )
@@ -431,7 +439,7 @@ def login(body: LoginBody, request: Request, response: Response):
         value=raw_session,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=_is_https_request(request),
         max_age=SESSION_TTL_SECONDS,
         path="/",
     )
@@ -722,11 +730,8 @@ async def ingest_soop_chat_event(
         header_csrf = request.headers.get("X-CSRF-Token", "")
         if not header_csrf or not hmac.compare_digest(header_csrf, session["csrf_token"]):
             raise HTTPException(status_code=403, detail="CSRF 토큰이 유효하지 않습니다.")
-        soop_target = body.soop_id.strip().lower()
-        if session["role"] not in ("admin", "staff"):
-            allowed_ids = {x for x in (session["soop_id"], session["soop_pending_id"]) if x}
-            if soop_target not in allowed_ids:
-                raise HTTPException(status_code=403, detail="본인의 연동/대기 중인 SOOP 아이디만 테스트할 수 있습니다.")
+        if not _has_broadcaster_power(session):
+            raise HTTPException(status_code=403, detail="서명되지 않은 채팅 이벤트 전송 권한이 없습니다.")
 
     return _process_soop_chat_event(body.soop_id, body.message, body.event_id)
 
@@ -771,6 +776,8 @@ def _post_soop_form(url: str, params: dict[str, str]) -> dict:
 
 @app.get("/api/admin/soop-sdk/config")
 def get_soop_sdk_config(admin: dict = Depends(require_admin)):
+    if not _has_broadcaster_power(admin):
+        raise HTTPException(status_code=403, detail="최고관리자만 SOOP API 키 설정을 조회할 수 있습니다.")
     conn = get_connection()
     try:
         client_id = _get_setting(conn, "soop_client_id")
@@ -792,6 +799,8 @@ def get_soop_sdk_config(admin: dict = Depends(require_admin)):
 
 @app.put("/api/admin/soop-sdk/config")
 def save_soop_sdk_config(body: SoopSdkConfigBody, admin: dict = Depends(require_admin)):
+    if not _has_broadcaster_power(admin):
+        raise HTTPException(status_code=403, detail="최고관리자만 SOOP API 키 설정을 변경할 수 있습니다.")
     client_id = body.client_id.strip()
     client_secret = body.client_secret.strip()
     with transaction() as conn:
@@ -803,6 +812,8 @@ def save_soop_sdk_config(body: SoopSdkConfigBody, admin: dict = Depends(require_
 
 @app.post("/api/admin/soop-sdk/token")
 def issue_soop_sdk_token(body: SoopSdkTokenBody, admin: dict = Depends(require_admin)):
+    if not _has_broadcaster_power(admin):
+        raise HTTPException(status_code=403, detail="최고관리자만 SOOP 토큰을 발급할 수 있습니다.")
     conn = get_connection()
     try:
         client_id = _get_setting(conn, "soop_client_id")
@@ -910,7 +921,7 @@ def ingest_soop_sdk_message(body: SoopSdkMessageBody, admin: dict = Depends(requ
     if res.get("status") == "awarded":
         collector_state["points_awarded"] += int(res.get("awarded", 0))
         collector_state["recent_logs"].appendleft(
-            {"soop_id": sender_id, "text": f"+{res.get('awarded')}P · {sender_id}: {msg[:30]}"}
+            {"soop_id": sender_id, "text": f"+{res.get('awarded')}P 채팅 적립 ({sender_id})"}
         )
     elif res.get("status") == "verified":
         collector_state["recent_logs"].appendleft(
