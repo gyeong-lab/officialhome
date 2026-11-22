@@ -26,7 +26,7 @@
     ctx: null,
     mode: "practice", // "practice" | "pvp"
     difficulty: "normal",
-    selectedStake: 100,
+    selectedStake: 1000,
     board: [],
     turn: 1,
     running: false,

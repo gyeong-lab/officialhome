@@ -3411,7 +3411,7 @@ def forfeit_omok_challenge(
 # Mini-Game: Omok 1:1 PvP Rooms (유저 대전)
 # ---------------------------------------------------------------------------
 
-OMOK_PVP_STAKES = (100, 300, 500)
+OMOK_PVP_STAKES = (1000, 3000, 5000, 10000)
 OMOK_TURN_SECONDS = 45
 _OMOK_DIRS = ((1, 0), (0, 1), (1, 1), (1, -1))
 
@@ -3655,7 +3655,7 @@ def create_omok_pvp_room(
     ):
         raise HTTPException(status_code=429, detail="요청이 너무 많습니다. 잠시 후 다시 시도해주세요.")
     if body.stake not in OMOK_PVP_STAKES:
-        raise HTTPException(status_code=400, detail="유효하지 않은 참가비입니다. (100 / 300 / 500 P)")
+        raise HTTPException(status_code=400, detail="유효하지 않은 참가비입니다. (1,000 / 3,000 / 5,000 / 10,000 P)")
 
     now = utc_now_iso()
     with transaction() as conn:

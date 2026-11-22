@@ -513,7 +513,7 @@ _PG_SCHEMA_STATEMENTS = [
         id SERIAL PRIMARY KEY,
         host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         guest_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        stake INTEGER NOT NULL CHECK(stake IN (100, 300, 500)),
+        stake INTEGER NOT NULL CHECK(stake > 0),
         status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting', 'playing', 'finished', 'cancelled')),
         board_json TEXT NOT NULL,
         turn INTEGER NOT NULL DEFAULT 1 CHECK(turn IN (1, 2)),
@@ -537,6 +537,8 @@ def _init_pg_schema(conn: Any) -> None:
     conn.execute(
         "ALTER TABLE gifts ADD CONSTRAINT gifts_gift_type_check CHECK (gift_type IN ('point', 'item', 'emoticon', 'voucher'))"
     )
+    conn.execute("ALTER TABLE omok_rooms DROP CONSTRAINT IF EXISTS omok_rooms_stake_check")
+    conn.execute("ALTER TABLE omok_rooms ADD CONSTRAINT omok_rooms_stake_check CHECK (stake > 0)")
 
 
 def _migrate_gifts_type_check_if_needed() -> None:
@@ -817,7 +819,7 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 guest_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-                stake INTEGER NOT NULL CHECK(stake IN (100, 300, 500)),
+                stake INTEGER NOT NULL CHECK(stake > 0),
                 status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting', 'playing', 'finished', 'cancelled')),
                 board_json TEXT NOT NULL,
                 turn INTEGER NOT NULL DEFAULT 1 CHECK(turn IN (1, 2)),
@@ -900,6 +902,35 @@ def init_db() -> None:
                     conn.execute("ALTER TABLE predictions ADD COLUMN options_json TEXT NOT NULL DEFAULT '[]'")
             if "closes_at" not in pred_cols:
                 conn.execute("ALTER TABLE predictions ADD COLUMN closes_at TEXT")
+
+            omok_sql_row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'omok_rooms'"
+            ).fetchone()
+            if omok_sql_row and "CHECK(stake IN (100, 300, 500))" in (omok_sql_row["sql"] or ""):
+                conn.executescript(
+                    """
+                    CREATE TABLE omok_rooms_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        guest_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        stake INTEGER NOT NULL CHECK(stake > 0),
+                        status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting', 'playing', 'finished', 'cancelled')),
+                        board_json TEXT NOT NULL,
+                        turn INTEGER NOT NULL DEFAULT 1 CHECK(turn IN (1, 2)),
+                        moves_count INTEGER NOT NULL DEFAULT 0,
+                        last_move_json TEXT NOT NULL DEFAULT 'null',
+                        win_line_json TEXT NOT NULL DEFAULT 'null',
+                        winner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        end_reason TEXT NOT NULL DEFAULT '',
+                        turn_deadline TEXT,
+                        created_at TEXT NOT NULL,
+                        finished_at TEXT
+                    );
+                    INSERT INTO omok_rooms_new SELECT * FROM omok_rooms;
+                    DROP TABLE omok_rooms;
+                    ALTER TABLE omok_rooms_new RENAME TO omok_rooms;
+                    """
+                )
 
         # Seed only if users table is empty
         user_count = conn.execute("SELECT COUNT(*) AS cnt FROM users").fetchone()["cnt"]
