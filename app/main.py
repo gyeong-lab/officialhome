@@ -1721,20 +1721,37 @@ def daily_attendance(session: dict = Depends(require_csrf)):
 
 
 @app.get("/api/points/ledger")
-def get_my_ledger(session: dict = Depends(require_user)):
+def get_my_ledger(page: int = 1, per_page: int = 10, session: dict = Depends(require_user)):
+    page = max(1, page)
+    per_page = max(1, min(per_page, 50))
+    offset = (page - 1) * per_page
     conn = get_connection()
     try:
+        total = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM point_ledger WHERE user_id = ?",
+            (session["id"],),
+        ).fetchone()["cnt"]
+        total_pages = max(1, (int(total) + per_page - 1) // per_page)
+        if page > total_pages:
+            page = total_pages
+            offset = (page - 1) * per_page
         rows = conn.execute(
             """
             SELECT id, delta, balance_after, reason, source, created_at
             FROM point_ledger
             WHERE user_id = ?
             ORDER BY id DESC
-            LIMIT 50
+            LIMIT ? OFFSET ?
             """,
-            (session["id"],),
+            (session["id"], per_page, offset),
         ).fetchall()
-        return {"ledger": [dict(r) for r in rows]}
+        return {
+            "ledger": [dict(r) for r in rows],
+            "page": page,
+            "per_page": per_page,
+            "total": int(total),
+            "total_pages": total_pages,
+        }
     finally:
         conn.close()
 
@@ -2482,9 +2499,14 @@ def admin_update_redemption(
         return {"ok": True}
 
 
+def _has_broadcaster_power(user: dict) -> bool:
+    return user.get("role") == "admin" or user.get("username") == "1234gung"
+
+
 class UserBanBody(BaseModel):
     mode: Literal["temp", "black", "unban"]
     days: int = Field(default=7, ge=1, le=3650)
+    hours: int | None = Field(default=None, ge=1, le=87600)
     reason: str = Field(default="", max_length=120)
 
 
@@ -2513,22 +2535,23 @@ def admin_soop_lookup(q: str = "", admin: dict = Depends(require_admin)):
             like = f"%{kw}%"
             rows = conn.execute(
                 """
-                SELECT id, username, nickname, role, points, soop_id, soop_verified, soop_pending_id
+                SELECT id, username, nickname, role, points, soop_id, soop_verified, soop_pending_id,
+                       ban_until, is_blacklisted, ban_reason
                 FROM users
                 WHERE username LIKE ? OR nickname LIKE ? OR COALESCE(soop_id, '') LIKE ? OR COALESCE(soop_pending_id, '') LIKE ?
                 ORDER BY soop_verified DESC, id ASC
-                LIMIT 50
+                LIMIT 200
                 """,
                 (like, like, like, like),
             ).fetchall()
         else:
             rows = conn.execute(
                 """
-                SELECT id, username, nickname, role, points, soop_id, soop_verified, soop_pending_id
+                SELECT id, username, nickname, role, points, soop_id, soop_verified, soop_pending_id,
+                       ban_until, is_blacklisted, ban_reason
                 FROM users
-                WHERE soop_verified = 1 OR soop_pending_id IS NOT NULL
                 ORDER BY soop_verified DESC, id ASC
-                LIMIT 50
+                LIMIT 200
                 """
             ).fetchall()
         results = []
@@ -2548,14 +2571,15 @@ def admin_ban_user(user_id: int, body: UserBanBody, admin: dict = Depends(requir
         target = conn.execute("SELECT id, role, username FROM users WHERE id = ?", (user_id,)).fetchone()
         if not target:
             raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
-        if target["role"] == "admin":
-            raise HTTPException(status_code=400, detail="방송인(최고관리자)은 정지할 수 없습니다.")
-        if target["role"] == "staff" and admin["role"] != "admin":
+        if target["role"] == "admin" or target["username"] == "1234gung":
+            raise HTTPException(status_code=400, detail="방송인(최고관리자) 또는 제작자 계정은 정지할 수 없습니다.")
+        if target["role"] == "staff" and not _has_broadcaster_power(admin):
             raise HTTPException(status_code=403, detail="다른 관리자는 방송인만 정지할 수 있습니다.")
 
         reason = clean_text(body.reason, 120) or "관리자 조치"
         if body.mode == "temp":
-            until_iso = (datetime.now(timezone.utc) + timedelta(days=body.days)).isoformat()
+            delta = timedelta(hours=body.hours) if body.hours else timedelta(days=body.days)
+            until_iso = (datetime.now(timezone.utc) + delta).isoformat()
             conn.execute(
                 "UPDATE users SET ban_until = ?, is_blacklisted = 0, ban_reason = ? WHERE id = ?",
                 (until_iso, reason, user_id),
@@ -2577,14 +2601,16 @@ def admin_ban_user(user_id: int, body: UserBanBody, admin: dict = Depends(requir
 
 @app.patch("/api/admin/users/{user_id}/role")
 def admin_update_user_role(user_id: int, body: RoleUpdateBody, admin: dict = Depends(require_admin)):
-    if admin["role"] != "admin":
+    if not _has_broadcaster_power(admin):
         raise HTTPException(status_code=403, detail="매니저 임명/해제는 방송인(최고관리자)만 가능합니다.")
     with transaction() as conn:
-        target = conn.execute("SELECT id, role FROM users WHERE id = ?", (user_id,)).fetchone()
+        target = conn.execute("SELECT id, role, username FROM users WHERE id = ?", (user_id,)).fetchone()
         if not target:
             raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
-        if target["role"] == "admin":
-            raise HTTPException(status_code=400, detail="최고관리자 권한은 변경할 수 없습니다.")
+        if target["username"] == "1234gung":
+            raise HTTPException(status_code=400, detail="제작자(1234gung) 계정의 권한은 변경할 수 없습니다.")
+        if target["role"] == "admin" and admin["username"] != "1234gung":
+            raise HTTPException(status_code=400, detail="방송인(최고관리자) 권한은 변경할 수 없습니다.")
         conn.execute("UPDATE users SET role = ? WHERE id = ?", (body.role, user_id))
     return {"ok": True}
 
@@ -2596,8 +2622,8 @@ class RoleByNameBody(BaseModel):
 
 @app.post("/api/admin/users/role-by-name")
 def admin_update_role_by_name(body: RoleByNameBody, admin: dict = Depends(require_admin)):
-    if admin["role"] != "admin":
-        raise HTTPException(status_code=403, detail="권한 임명/변경은 최고관리자(주인)만 가능합니다.")
+    if not _has_broadcaster_power(admin):
+        raise HTTPException(status_code=403, detail="권한 임명/변경은 방송인(최고관리자)만 가능합니다.")
     key = body.target.strip()
     with transaction() as conn:
         target = conn.execute(
@@ -2606,15 +2632,16 @@ def admin_update_role_by_name(body: RoleByNameBody, admin: dict = Depends(requir
         ).fetchone()
         if not target:
             raise HTTPException(status_code=404, detail="해당 아이디 또는 닉네임의 회원을 찾을 수 없습니다.")
+        if target["username"] == "1234gung":
+            raise HTTPException(status_code=400, detail="제작자(1234gung) 계정의 권한은 변경할 수 없습니다.")
         if target["id"] == admin["id"]:
             raise HTTPException(status_code=400, detail="본인 계정의 권한은 여기서 변경할 수 없습니다.")
-        if target["role"] == "admin":
-            raise HTTPException(status_code=400, detail="최고관리자 권한은 변경할 수 없습니다.")
+        if target["role"] == "admin" and admin["username"] != "1234gung":
+            raise HTTPException(status_code=400, detail="방송인(최고관리자) 권한은 변경할 수 없습니다.")
         if body.role == "admin":
             if target["is_blacklisted"]:
-                raise HTTPException(status_code=400, detail="영구정지된 회원에게는 주인을 넘길 수 없습니다.")
+                raise HTTPException(status_code=400, detail="영구정지된 회원은 방송인으로 승격할 수 없습니다.")
             conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (target["id"],))
-            conn.execute("UPDATE users SET role = 'staff' WHERE id = ?", (admin["id"],))
         else:
             conn.execute("UPDATE users SET role = ? WHERE id = ?", (body.role, target["id"]))
         return {"ok": True, "nickname": target["nickname"], "role": body.role}
@@ -2622,10 +2649,10 @@ def admin_update_role_by_name(body: RoleByNameBody, admin: dict = Depends(requir
 
 @app.post("/api/admin/users/{user_id}/transfer-owner")
 def admin_transfer_owner(user_id: int, admin: dict = Depends(require_admin)):
-    if admin["role"] != "admin":
-        raise HTTPException(status_code=403, detail="주인(최고관리자) 이양은 현재 주인만 가능합니다.")
+    if not _has_broadcaster_power(admin):
+        raise HTTPException(status_code=403, detail="방송인 승격은 최고관리자만 가능합니다.")
     if user_id == admin["id"]:
-        raise HTTPException(status_code=400, detail="이미 본인 계정이 주인입니다.")
+        raise HTTPException(status_code=400, detail="이미 본인 계정입니다.")
     with transaction() as conn:
         target = conn.execute(
             "SELECT id, nickname, is_blacklisted FROM users WHERE id = ?",
@@ -2634,9 +2661,8 @@ def admin_transfer_owner(user_id: int, admin: dict = Depends(require_admin)):
         if not target:
             raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
         if target["is_blacklisted"]:
-            raise HTTPException(status_code=400, detail="영구정지된 회원에게는 주인을 넘길 수 없습니다.")
+            raise HTTPException(status_code=400, detail="영구정지된 회원은 방송인으로 승격할 수 없습니다.")
         conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (user_id,))
-        conn.execute("UPDATE users SET role = 'staff' WHERE id = ?", (admin["id"],))
     return {"ok": True, "new_owner": target["nickname"]}
 
 
@@ -2648,9 +2674,9 @@ def admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
         target = conn.execute("SELECT id, username, nickname, role FROM users WHERE id = ?", (user_id,)).fetchone()
         if not target:
             raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
-        if target["role"] == "admin":
-            raise HTTPException(status_code=403, detail="최고관리자(방송인) 계정은 삭제할 수 없습니다.")
-        if admin["role"] != "admin" and target["role"] != "user":
+        if target["role"] == "admin" or target["username"] == "1234gung":
+            raise HTTPException(status_code=403, detail="방송인 또는 제작자 계정은 삭제할 수 없습니다.")
+        if not _has_broadcaster_power(admin) and target["role"] != "user":
             raise HTTPException(status_code=403, detail="일반팬 계정만 삭제할 수 있습니다.")
         conn.execute("UPDATE predictions SET created_by = ? WHERE created_by = ?", (admin["id"], user_id))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))

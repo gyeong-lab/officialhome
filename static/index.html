@@ -333,6 +333,7 @@
       <div class="card mt-16">
         <h3>📜 내 포인트 원장 (적립/사용 내역)</h3>
         <div id="ledger-list" class="list-stack mt-12"></div>
+        <div id="ledger-pagination" class="row-gap mt-12" style="justify-content:center"></div>
       </div>
       </div>
 
@@ -585,7 +586,7 @@
               <select id="adm-role-select" style="flex:1">
                 <option value="user">일반팬 (하향/해제)</option>
                 <option value="staff">관리자/매니저 (승격)</option>
-                <option value="admin">👑 방송인/주인 (주인 넘기기)</option>
+                <option value="admin">👑 방송인으로 승격</option>
               </select>
               <button type="submit" class="btn btn-pink btn-sm">권한 적용</button>
             </div>
@@ -601,7 +602,7 @@
           <span class="muted small">공홈 회원이 어떤 SOOP 아이디로 인증했는지 조회합니다</span>
         </div>
         <form id="admin-soop-lookup-form" class="search-form mt-12">
-          <input type="text" id="adm-soop-lookup-input" placeholder="공홈 아이디, 닉네임 또는 SOOP ID 입력 (비우면 인증된 회원 전체 조회)..." maxlength="40" />
+          <input type="text" id="adm-soop-lookup-input" placeholder="아이디, 닉네임 또는 SOOP ID 검색 (클릭 시 SOOP 조회·제재)..." maxlength="40" />
           <button type="submit" class="btn btn-pink btn-sm">조회</button>
         </form>
         <div id="admin-soop-lookup-result" class="list-stack mt-12"></div>
@@ -675,6 +676,6 @@
   </div>
 
   <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
-  <script src="/static/app.js?v=20261120s"></script>
+  <script src="/static/app.js?v=20261122a"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@
     boardSort: "latest",
     noticeSubTab: "soop",
     noticePage: 1,
+    ledgerPage: 1,
     sigCategory: "all",
     sigSort: "asc",
     sigKeyword: "",
@@ -2117,8 +2118,10 @@
     });
 
     const ledgerWrap = document.getElementById("ledger-list");
+    const ledgerPag = document.getElementById("ledger-pagination");
     const redWrap = document.getElementById("my-redemptions-list");
     clear(ledgerWrap);
+    if (ledgerPag) clear(ledgerPag);
     clear(redWrap);
 
     if (!state.user) {
@@ -2128,10 +2131,13 @@
     }
 
     const [ledgerRes, redRes] = await Promise.all([
-      api("/api/points/ledger"),
+      api(`/api/points/ledger?page=${state.ledgerPage || 1}&per_page=10`),
       api("/api/redemptions/me"),
     ]);
 
+    if (!(ledgerRes.ledger || []).length) {
+      ledgerWrap.appendChild(el("p", { className: "muted small", textContent: "포인트 내역이 없습니다." }));
+    }
     (ledgerRes.ledger || []).forEach((l) => {
       const sign = l.delta >= 0 ? `+${l.delta}` : String(l.delta);
       ledgerWrap.appendChild(
@@ -2147,6 +2153,55 @@
         ])
       );
     });
+
+    if (ledgerPag) {
+      const cur = ledgerRes.page || 1;
+      const last = ledgerRes.total_pages || 1;
+      if (last > 1) {
+        const goLedgerPage = (p) => {
+          state.ledgerPage = p;
+          loadPointsPage();
+        };
+        const btnRow = el("div", { className: "row-gap", style: "width:100%; justify-content:center" }, [
+          el("button", {
+            type: "button",
+            className: "btn btn-outline btn-sm",
+            textContent: "◀ 이전",
+            disabled: cur <= 1,
+            onClick: () => { if (cur > 1) goLedgerPage(cur - 1); },
+          }),
+        ]);
+        const startP = Math.max(1, cur - 2);
+        const endP = Math.min(last, cur + 2);
+        for (let pNum = startP; pNum <= endP; pNum++) {
+          btnRow.appendChild(
+            el("button", {
+              type: "button",
+              className: `btn btn-sm ${pNum === cur ? "btn-pink" : "btn-outline"}`,
+              textContent: String(pNum),
+              onClick: () => goLedgerPage(pNum),
+            })
+          );
+        }
+        btnRow.appendChild(
+          el("button", {
+            type: "button",
+            className: "btn btn-outline btn-sm",
+            textContent: "다음 ▶",
+            disabled: cur >= last,
+            onClick: () => { if (cur < last) goLedgerPage(cur + 1); },
+          })
+        );
+        ledgerPag.appendChild(btnRow);
+        ledgerPag.appendChild(
+          el("div", {
+            className: "muted small",
+            style: "width:100%; text-align:center",
+            textContent: `${cur} / ${last}페이지 · 총 ${(ledgerRes.total || 0).toLocaleString()}건`,
+          })
+        );
+      }
+    }
 
     (redRes.redemptions || []).forEach((r) => {
       redWrap.appendChild(
@@ -2323,7 +2378,8 @@
           : "";
 
       const right = el("div", { className: "row-gap" });
-      const canManageBan = u.role !== "admin" && (state.user.role === "admin" || u.role === "user");
+      const hasBroadcasterPerm = state.user.role === "admin" || state.user.username === "1234gung";
+      const canManageBan = u.role !== "admin" && u.username !== "1234gung" && (hasBroadcasterPerm || u.role === "user");
       const canDelete = canManageBan && u.id !== state.user.id;
 
       if (canManageBan) {
@@ -2562,35 +2618,132 @@
         resWrap.appendChild(el("p", { className: "muted small", textContent: "조건에 맞는 회원이 없습니다." }));
         return;
       }
+      const nowMs = Date.now();
       list.forEach((u) => {
-        const statusNode = u.soop_verified && u.soop_id
-          ? el("div", { className: "row-gap" }, [
-              el("span", { className: "badge-pink", textContent: `✅ SOOP 인증됨: ${u.soop_id}` }),
-              el("a", {
-                href: u.soop_station_url || `https://www.sooplive.com/station/${encodeURIComponent(u.soop_id)}`,
-                target: "_blank",
-                rel: "noopener noreferrer",
-                className: "btn btn-outline btn-sm",
-                textContent: "SOOP 채널 열기 ↗",
-              }),
-            ])
+        const isTempBanned = Boolean(u.ban_until && new Date(u.ban_until).getTime() > nowMs);
+        const banBadge = u.is_blacklisted
+          ? el("span", { className: "badge-pink", style: "background:#fee2e2; color:#b91c1c", textContent: "⛔ 활동금지" })
+          : isTempBanned
+            ? el("span", { className: "badge-pink", style: "background:#fef3c7; color:#92400e", textContent: "⏳ 일시정지" })
+            : null;
+
+        const soopBadge = u.soop_verified && u.soop_id
+          ? el("span", { className: "badge-pink", textContent: `✅ ${u.soop_id}` })
           : u.soop_pending_id
-            ? el("span", { className: "badge-pink", style: "background:#fef3c7; color:#92400e", textContent: `⏳ 인증 대기 중: ${u.soop_pending_id}` })
-            : el("span", { className: "muted small", textContent: "❌ SOOP 미연동" });
+            ? el("span", { className: "badge-pink", style: "background:#fef3c7; color:#92400e", textContent: `⏳ 대기: ${u.soop_pending_id}` })
+            : el("span", { className: "muted small", textContent: "미연동" });
 
         resWrap.appendChild(
-          el("div", { className: "list-item" }, [
-            el("div", {}, [
-              el("strong", { textContent: `${u.nickname} (${u.username})` }),
-              el("div", { className: "muted small", textContent: `보유 포인트: ${u.points.toLocaleString()}P` }),
-            ]),
-            statusNode,
-          ])
+          el(
+            "div",
+            {
+              className: "list-item",
+              style: "cursor:pointer",
+              onClick: () => openSoopUserActionModal(u),
+            },
+            [
+              el("div", {}, [
+                el("div", { className: "row-gap" }, [
+                  el("strong", { textContent: `${u.nickname} (${u.username})` }),
+                  banBadge,
+                ]),
+                el("div", { className: "muted small", textContent: `보유 ${Number(u.points || 0).toLocaleString()}P · 눌러서 SOOP 상세/제재` }),
+              ]),
+              soopBadge,
+            ]
+          )
         );
       });
     } catch (err) {
       resWrap.appendChild(el("p", { className: "muted small", textContent: err.message }));
     }
+  }
+
+  function openSoopUserActionModal(u) {
+    const nowMs = Date.now();
+    const isTempBanned = Boolean(u.ban_until && new Date(u.ban_until).getTime() > nowMs);
+    const isBanned = Boolean(u.is_blacklisted || isTempBanned);
+    const stack = el("div", { className: "form-stack" });
+
+    const soopInfo = u.soop_verified && u.soop_id
+      ? el("div", { className: "info-box" }, [
+          el("div", {}, [el("strong", { textContent: `✅ 연동된 SOOP 계정: ${u.soop_id}` })]),
+          el("a", {
+            href: u.soop_station_url || `https://www.sooplive.com/station/${encodeURIComponent(u.soop_id)}`,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            className: "btn btn-outline btn-sm mt-12",
+            textContent: "SOOP 방송국 열기 ↗",
+          }),
+        ])
+      : u.soop_pending_id
+        ? el("div", { className: "info-box", textContent: `⏳ SOOP 인증 대기 중: ${u.soop_pending_id}` })
+        : el("div", { className: "info-box", textContent: "❌ 연동된 SOOP 계정이 없습니다." });
+    stack.appendChild(soopInfo);
+
+    const statusText = u.is_blacklisted
+      ? `⛔ 현재 영구 활동금지 상태 (사유: ${u.ban_reason || "-"})`
+      : isTempBanned
+        ? `⏳ 현재 활동일시정지 중 (~${formatDate(u.ban_until)} · 사유: ${u.ban_reason || "-"})`
+        : "✅ 현재 정상 활동 중";
+    stack.appendChild(el("div", { className: "muted small", textContent: statusText }));
+
+    const canSanction = u.role !== "admin" && u.username !== "1234gung" && (state.user.role === "admin" || state.user.username === "1234gung" || u.role === "user");
+    if (canSanction) {
+      const reasonIn = el("input", { type: "text", maxlength: "120", placeholder: "제재 사유 입력 (선택)" });
+      stack.appendChild(el("label", {}, ["제재 사유", reasonIn]));
+
+      const applyBan = async (payload, okMsg) => {
+        try {
+          await api(`/api/admin/users/${u.id}/ban`, { method: "POST", body: payload });
+          closeModal();
+          showToast(okMsg);
+          loadAdminPage();
+        } catch (err) {
+          showToast(err.message);
+        }
+      };
+
+      const btnGrid = el("div", { className: "row-gap", style: "flex-wrap:wrap" }, [
+        el("button", {
+          type: "button",
+          className: "btn btn-outline btn-sm",
+          textContent: "⏳ 1시간 정지",
+          onClick: () => applyBan({ mode: "temp", hours: 1, reason: reasonIn.value }, `${u.nickname}님 1시간 활동일시정지 처리 완료`),
+        }),
+        el("button", {
+          type: "button",
+          className: "btn btn-outline btn-sm",
+          textContent: "⏳ 하루 정지",
+          onClick: () => applyBan({ mode: "temp", days: 1, reason: reasonIn.value }, `${u.nickname}님 하루 활동일시정지 처리 완료`),
+        }),
+        el("button", {
+          type: "button",
+          className: "btn btn-outline btn-sm",
+          textContent: "⏳ 일주일 정지",
+          onClick: () => applyBan({ mode: "temp", days: 7, reason: reasonIn.value }, `${u.nickname}님 일주일 활동일시정지 처리 완료`),
+        }),
+        el("button", {
+          type: "button",
+          className: "btn btn-danger btn-sm",
+          textContent: "⛔ 활동금지(영구)",
+          onClick: () => applyBan({ mode: "black", reason: reasonIn.value }, `${u.nickname}님 영구 활동금지 처리 완료`),
+        }),
+      ]);
+      if (isBanned) {
+        btnGrid.appendChild(
+          el("button", {
+            type: "button",
+            className: "btn btn-pink btn-sm",
+            textContent: "✅ 정지 해제",
+            onClick: () => applyBan({ mode: "unban" }, `${u.nickname}님 제재가 해제되었습니다.`),
+          })
+        );
+      }
+      stack.appendChild(btnGrid);
+    }
+
+    openModal(`${u.nickname} (${u.username}) SOOP · 제재`, stack);
   }
 
   async function handleAttendance() {
@@ -3059,7 +3212,7 @@
   function openUserManageModal(u, isBanned) {
     const stack = el("div", { className: "form-stack" });
 
-    if (state.user.role === "admin") {
+    if (state.user.role === "admin" || state.user.username === "1234gung") {
       const roleSelect = el("select", {}, [
         el("option", { value: "user", textContent: "일반팬" }),
         el("option", { value: "staff", textContent: "관리자(매니저)" }),
@@ -3085,25 +3238,24 @@
           el("button", {
             type: "button",
             className: "btn btn-outline btn-sm",
-            textContent: "👑 주인 넘기기",
+            textContent: "👑 방송인으로 승격",
             onClick: () => {
               const confirmForm = el("form", { className: "form-stack" }, [
-                el("p", { textContent: `정말 '${u.nickname} (${u.username})'님께 최고관리자(주인) 권한을 넘기시겠습니까?` }),
-                el("p", { className: "muted small", textContent: "권한을 넘기면 본인 계정은 일반 관리자(매니저)로 전환됩니다." }),
+                el("p", { textContent: `정말 '${u.nickname} (${u.username})'님을 방송인(최고관리자)으로 승격하시겠습니까?` }),
                 el("div", { className: "modal-footer-end" }, [
                   el("button", { type: "button", className: "btn btn-outline btn-sm", textContent: "취소", onClick: closeModal }),
-                  el("button", { type: "submit", className: "btn btn-pink btn-sm", textContent: "주인 넘기기 확정" }),
+                  el("button", { type: "submit", className: "btn btn-pink btn-sm", textContent: "방송인 승격 확정" }),
                 ]),
               ]);
               confirmForm.addEventListener("submit", async (e) => {
                 e.preventDefault();
                 await api(`/api/admin/users/${u.id}/transfer-owner`, { method: "POST" });
                 closeModal();
-                showToast(`${u.nickname}님께 주인 권한이 이양되었습니다.`);
+                showToast(`${u.nickname}님이 방송인으로 승격되었습니다.`);
                 await refreshMe();
                 loadAdminPage();
               });
-              openModal("최고관리자(주인) 이양", confirmForm);
+              openModal("방송인 승격", confirmForm);
             },
           }),
         ])

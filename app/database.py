@@ -795,7 +795,7 @@ def init_db() -> None:
             conn.execute(
                 """
                 INSERT INTO users (username, nickname, password_hash, role, points, soop_id, soop_verified, created_at)
-                VALUES (?, ?, ?, 'admin', 5000, NULL, 0, ?)
+                VALUES (?, ?, ?, 'staff', 5000, NULL, 0, ?)
                 """,
                 ("1234gung", "조정간단발이", hash_password("Admin!1234"), now),
             )
@@ -871,14 +871,16 @@ def init_db() -> None:
             if legacy_admin:
                 if not gung_user:
                     conn.execute(
-                        "UPDATE users SET username = '1234gung', nickname = '조정간단발이', role = 'admin', soop_id = NULL, soop_verified = 0 WHERE id = ?",
+                        "UPDATE users SET username = '1234gung', nickname = '조정간단발이', role = 'staff', soop_id = NULL, soop_verified = 0 WHERE id = ?",
                         (legacy_admin["id"],),
                     )
                 else:
-                    conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (gung_user["id"],))
+                    conn.execute("UPDATE users SET role = 'staff' WHERE id = ?", (gung_user["id"],))
                     conn.execute("UPDATE posts SET author_id = ? WHERE author_id = ?", (gung_user["id"], legacy_admin["id"]))
                     conn.execute("UPDATE predictions SET created_by = ? WHERE created_by = ?", (gung_user["id"], legacy_admin["id"]))
                     conn.execute("DELETE FROM users WHERE id = ?", (legacy_admin["id"],))
+            elif gung_user:
+                conn.execute("UPDATE users SET role = 'staff' WHERE id = ? AND role != 'staff'", (gung_user["id"],))
 
             # Ensure manager account exists for existing databases
             has_manager = conn.execute("SELECT id FROM users WHERE username = 'manager'").fetchone()
