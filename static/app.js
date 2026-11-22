@@ -1157,7 +1157,7 @@
 
   async function loadEmoticonsPage() {
     const adminCard = document.getElementById("emoticon-admin-card");
-    const canManage = isAdminOrStaff();
+    const canManage = isStaffOrAdmin();
     if (adminCard) adminCard.classList.toggle("hidden", !canManage);
 
     const list = await loadEmoticons();
@@ -2424,6 +2424,83 @@
     }
   }
 
+  function switchAdminTab(tabName) {
+    document.querySelectorAll("#admin-tabs .pill").forEach((p) => p.classList.toggle("active", p.dataset.atab === tabName));
+    const ov = document.getElementById("admin-tab-overview");
+    const bal = document.getElementById("admin-tab-balances");
+    if (ov) ov.classList.toggle("hidden", tabName !== "overview");
+    if (bal) bal.classList.toggle("hidden", tabName !== "balances");
+  }
+
+  function renderAdminBalances(users = []) {
+    const listWrap = document.getElementById("admin-balances-list");
+    const summaryEl = document.getElementById("adm-total-points-summary");
+    if (!listWrap) return;
+    clear(listWrap);
+
+    const totalPts = users.reduce((acc, u) => acc + Number(u.points || 0), 0);
+    if (summaryEl) summaryEl.textContent = `총 ${users.length}명 · 합계 ${totalPts.toLocaleString()}P`;
+
+    const kw = (document.getElementById("adm-balance-search")?.value || "").trim().toLowerCase();
+    const sortMode = document.getElementById("adm-balance-sort")?.value || "desc";
+    const ROLE_LABEL = { admin: "방송인", staff: "관리자(매니저)", user: "일반팬" };
+
+    const filtered = users
+      .filter((u) => {
+        if (!kw) return true;
+        return (
+          u.username.toLowerCase().includes(kw) ||
+          u.nickname.toLowerCase().includes(kw) ||
+          (u.soop_id || "").toLowerCase().includes(kw)
+        );
+      })
+      .slice()
+      .sort((a, b) => {
+        if (sortMode === "asc") return a.points - b.points || a.id - b.id;
+        if (sortMode === "id") return a.id - b.id;
+        return b.points - a.points || a.id - b.id;
+      });
+
+    if (!filtered.length) {
+      listWrap.appendChild(el("p", { className: "muted small", textContent: "조건에 맞는 회원이 없습니다." }));
+      return;
+    }
+
+    const nowMs = Date.now();
+    filtered.forEach((u, idx) => {
+      const hasDouble = Boolean(u.double_points_until && new Date(u.double_points_until).getTime() > nowMs);
+      const soopText = u.soop_verified && u.soop_id ? `SOOP: ${u.soop_id}` : "SOOP 미연동";
+      listWrap.appendChild(
+        el("div", { className: "list-item" }, [
+          el("div", {}, [
+            el("div", { className: "row-gap" }, [
+              el("strong", { textContent: `${idx + 1}. ${u.nickname} (${u.username})` }),
+              el("span", { className: "badge-pink", textContent: ROLE_LABEL[u.role] || u.role }),
+              hasDouble ? el("span", { className: "badge-pink", style: "background:#fef3c7; color:#92400e", textContent: "⚡ 2배 적용중" }) : null,
+            ]),
+            el("div", { className: "muted small", textContent: soopText }),
+          ]),
+          el("div", { className: "row-gap" }, [
+            el("strong", { style: "color:var(--pink-600); font-size:1.05rem", textContent: `${Number(u.points || 0).toLocaleString()} P` }),
+            el("button", {
+              type: "button",
+              className: "btn btn-outline btn-sm",
+              textContent: "지급/회수",
+              onClick: () => {
+                switchAdminTab("overview");
+                const ptUser = document.getElementById("adm-pt-user");
+                if (ptUser) {
+                  ptUser.value = u.username;
+                  ptUser.focus();
+                }
+              },
+            }),
+          ]),
+        ])
+      );
+    });
+  }
+
   // Admin
   async function loadAdminPage() {
     if (!state.user || !["admin", "staff"].includes(state.user.role)) return;
@@ -3469,83 +3546,6 @@
     }
 
     openModal(`${u.nickname} (${u.username}) 관리`, stack);
-  }
-
-  function switchAdminTab(tabName) {
-    document.querySelectorAll("#admin-tabs .pill").forEach((p) => p.classList.toggle("active", p.dataset.atab === tabName));
-    const ov = document.getElementById("admin-tab-overview");
-    const bal = document.getElementById("admin-tab-balances");
-    if (ov) ov.classList.toggle("hidden", tabName !== "overview");
-    if (bal) bal.classList.toggle("hidden", tabName !== "balances");
-  }
-
-  function renderAdminBalances(users = []) {
-    const listWrap = document.getElementById("admin-balances-list");
-    const summaryEl = document.getElementById("adm-total-points-summary");
-    if (!listWrap) return;
-    clear(listWrap);
-
-    const totalPts = users.reduce((acc, u) => acc + Number(u.points || 0), 0);
-    if (summaryEl) summaryEl.textContent = `총 ${users.length}명 · 합계 ${totalPts.toLocaleString()}P`;
-
-    const kw = (document.getElementById("adm-balance-search")?.value || "").trim().toLowerCase();
-    const sortMode = document.getElementById("adm-balance-sort")?.value || "desc";
-    const ROLE_LABEL = { admin: "방송인", staff: "관리자(매니저)", user: "일반팬" };
-
-    const filtered = users
-      .filter((u) => {
-        if (!kw) return true;
-        return (
-          u.username.toLowerCase().includes(kw) ||
-          u.nickname.toLowerCase().includes(kw) ||
-          (u.soop_id || "").toLowerCase().includes(kw)
-        );
-      })
-      .slice()
-      .sort((a, b) => {
-        if (sortMode === "asc") return a.points - b.points || a.id - b.id;
-        if (sortMode === "id") return a.id - b.id;
-        return b.points - a.points || a.id - b.id;
-      });
-
-    if (!filtered.length) {
-      listWrap.appendChild(el("p", { className: "muted small", textContent: "조건에 맞는 회원이 없습니다." }));
-      return;
-    }
-
-    const nowMs = Date.now();
-    filtered.forEach((u, idx) => {
-      const hasDouble = Boolean(u.double_points_until && new Date(u.double_points_until).getTime() > nowMs);
-      const soopText = u.soop_verified && u.soop_id ? `SOOP: ${u.soop_id}` : "SOOP 미연동";
-      listWrap.appendChild(
-        el("div", { className: "list-item" }, [
-          el("div", {}, [
-            el("div", { className: "row-gap" }, [
-              el("strong", { textContent: `${idx + 1}. ${u.nickname} (${u.username})` }),
-              el("span", { className: "badge-pink", textContent: ROLE_LABEL[u.role] || u.role }),
-              hasDouble ? el("span", { className: "badge-pink", style: "background:#fef3c7; color:#92400e", textContent: "⚡ 2배 적용중" }) : null,
-            ]),
-            el("div", { className: "muted small", textContent: soopText }),
-          ]),
-          el("div", { className: "row-gap" }, [
-            el("strong", { style: "color:var(--pink-600); font-size:1.05rem", textContent: `${Number(u.points || 0).toLocaleString()} P` }),
-            el("button", {
-              type: "button",
-              className: "btn btn-outline btn-sm",
-              textContent: "지급/회수",
-              onClick: () => {
-                switchAdminTab("overview");
-                const ptUser = document.getElementById("adm-pt-user");
-                if (ptUser) {
-                  ptUser.value = u.username;
-                  ptUser.focus();
-                }
-              },
-            }),
-          ]),
-        ])
-      );
-    });
   }
 
   // Admin forms
