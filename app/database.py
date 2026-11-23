@@ -548,11 +548,13 @@ def _init_pg_schema(conn: Any) -> None:
     conn.execute(
         """
         INSERT INTO shop_items (name, description, cost, stock, is_active)
-        SELECT '✨ 프로필 강화권', '닉네임 앞 마크를 최대 Lv.5까지 강화할 수 있는 강화권 1장! (강화할수록 성공 확률이 낮아집니다)', 1000, 999999, 1
+        SELECT '✨ 프로필 강화권', '닉네임 앞 뱃지를 최대 Lv.5까지 강화할 수 있는 강화권 1장! (강화할수록 성공 확률이 낮아집니다)', 1000, 999999, 1
         WHERE NOT EXISTS (SELECT 1 FROM shop_items WHERE name = '✨ 프로필 강화권')
         """
     )
-    conn.execute("UPDATE shop_items SET cost = 1000 WHERE name = '✨ 프로필 강화권' AND cost <> 1000")
+    conn.execute(
+        "UPDATE shop_items SET cost = 1000, description = '닉네임 앞 뱃지를 최대 Lv.5까지 강화할 수 있는 강화권 1장! (강화할수록 성공 확률이 낮아집니다)' WHERE name = '✨ 프로필 강화권'"
+    )
 
 
 def _migrate_gifts_type_check_if_needed() -> None:
@@ -894,11 +896,13 @@ def init_db() -> None:
             conn.execute(
                 """
                 INSERT INTO shop_items (name, description, cost, stock, is_active)
-                SELECT '✨ 프로필 강화권', '닉네임 앞 마크를 최대 Lv.5까지 강화할 수 있는 강화권 1장! (강화할수록 성공 확률이 낮아집니다)', 1000, 999999, 1
+                SELECT '✨ 프로필 강화권', '닉네임 앞 뱃지를 최대 Lv.5까지 강화할 수 있는 강화권 1장! (강화할수록 성공 확률이 낮아집니다)', 1000, 999999, 1
                 WHERE NOT EXISTS (SELECT 1 FROM shop_items WHERE name = '✨ 프로필 강화권')
                 """
             )
-            conn.execute("UPDATE shop_items SET cost = 1000 WHERE name = '✨ 프로필 강화권' AND cost != 1000")
+            conn.execute(
+                "UPDATE shop_items SET cost = 1000, description = '닉네임 앞 뱃지를 최대 Lv.5까지 강화할 수 있는 강화권 1장! (강화할수록 성공 확률이 낮아집니다)' WHERE name = '✨ 프로필 강화권'"
+            )
 
             pred_cols = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
             if "options_json" not in pred_cols:

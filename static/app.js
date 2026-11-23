@@ -195,7 +195,7 @@
       const nextMeta = PROFILE_MARKS[lv + 1];
 
       const previewBox = el("div", { className: "info-box", style: "text-align:center; padding:18px" }, [
-        el("div", { className: "muted small", textContent: "현재 내 닉네임 마크" }),
+        el("div", { className: "muted small", textContent: "현재 내 닉네임 뱃지" }),
         el("div", { style: "font-size:1.35rem; font-weight:800; margin:10px 0" }, [
           createProfileMark(lv) || el("span", { textContent: "👤 " }),
           el("span", { textContent: state.user.nickname }),
@@ -276,7 +276,7 @@
     };
 
     renderEnhanceBody();
-    openModal("✨ 프로필 마크 강화소", wrap);
+    openModal("✨ 프로필 뱃지", wrap);
   }
 
   function renderAuthArea() {
@@ -313,7 +313,7 @@
           type: "button",
           className: "btn btn-outline btn-sm",
           textContent: `✨ 강화${state.user.profile_tickets ? ` (${state.user.profile_tickets})` : ""}`,
-          title: "프로필 마크 강화소",
+          title: "프로필 뱃지",
           onClick: openProfileEnhanceModal,
         })
       );
