@@ -1303,6 +1303,80 @@
     }
   }
 
+  function serializeRichEditor(editorEl) {
+    let out = "";
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        out += node.nodeValue || "";
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const eid = node.getAttribute("data-emoticon-id");
+      if (eid) {
+        out += `[[이모티콘:${eid}]]`;
+        return;
+      }
+      const tag = node.tagName;
+      if (tag === "BR") {
+        out += "\n";
+        return;
+      }
+      const isBlock = tag === "DIV" || tag === "P";
+      if (isBlock && out.length > 0 && !out.endsWith("\n")) {
+        out += "\n";
+      }
+      node.childNodes.forEach(walk);
+    };
+    editorEl.childNodes.forEach(walk);
+    return out.replace(/\u00a0/g, " ");
+  }
+
+  function createRichEditor(placeholder) {
+    const editor = el("div", {
+      className: "rich-editor",
+      contenteditable: "true",
+    });
+    editor.setAttribute("data-placeholder", placeholder || "");
+    const saveRange = () => {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const rng = sel.getRangeAt(0);
+        if (editor.contains(rng.commonAncestorContainer)) {
+          editor._savedRange = rng.cloneRange();
+        }
+      }
+    };
+    editor.addEventListener("keyup", saveRange);
+    editor.addEventListener("mouseup", saveRange);
+    editor.addEventListener("blur", saveRange);
+    editor.addEventListener("input", () => {
+      if (editor.innerHTML === "<br>" || editor.innerHTML === "<div><br></div>") {
+        editor.innerHTML = "";
+      }
+      saveRange();
+    });
+    editor.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+      if (!text) return;
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        const tn = document.createTextNode(text);
+        range.insertNode(tn);
+        range.setStartAfter(tn);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        saveRange();
+      } else {
+        editor.appendChild(document.createTextNode(text));
+      }
+    });
+    return editor;
+  }
+
   function buildEmoticonPicker(targetInput, maxCount = 10) {
     const pickerBox = el("div", { className: "emoji-picker-box hidden" });
     const emojiEntries = Object.values(EMOTICON_MAP);
@@ -1339,6 +1413,55 @@
                 className: "emoji-btn",
                 title: em.name,
                 onClick: () => {
+                  if (targetInput.isContentEditable) {
+                    const count = targetInput.querySelectorAll("[data-emoticon-id]").length;
+                    if (count >= maxCount) return showToast(`이모티콘은 최대 ${maxCount}개까지 넣을 수 있습니다.`);
+                    const stickerNode = em.image_url
+                      ? el("img", {
+                          className: "inline-sticker-img",
+                          src: em.image_url,
+                          alt: em.name || "이모티콘",
+                          title: em.name || "이모티콘",
+                          contenteditable: "false",
+                        })
+                      : el("span", {
+                          className: "inline-sticker",
+                          textContent: em.glyph || "😊",
+                          title: em.name || "이모티콘",
+                          contenteditable: "false",
+                        });
+                    stickerNode.setAttribute("data-emoticon-id", String(em.id));
+
+                    targetInput.focus();
+                    const sel = window.getSelection();
+                    let range = targetInput._savedRange;
+                    if (!range && sel && sel.rangeCount > 0 && targetInput.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+                      range = sel.getRangeAt(0);
+                    }
+                    if (range && targetInput.contains(range.commonAncestorContainer)) {
+                      range.deleteContents();
+                      range.insertNode(stickerNode);
+                      range.setStartAfter(stickerNode);
+                      range.collapse(true);
+                      if (sel) {
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                      }
+                      targetInput._savedRange = range.cloneRange();
+                    } else {
+                      targetInput.appendChild(stickerNode);
+                      const newRange = document.createRange();
+                      newRange.setStartAfter(stickerNode);
+                      newRange.collapse(true);
+                      if (sel) {
+                        sel.removeAllRanges();
+                        sel.addRange(newRange);
+                      }
+                      targetInput._savedRange = newRange.cloneRange();
+                    }
+                    return;
+                  }
+
                   const count = (targetInput.value.match(/\[\[이모티콘:\d+\]\]/g) || []).length;
                   if (count >= maxCount) return showToast(`이모티콘은 최대 ${maxCount}개까지 넣을 수 있습니다.`);
                   const tag = `[[이모티콘:${em.id}]]`;
@@ -1472,12 +1595,9 @@
     tabSelect.value = activeDefault;
 
     const titleInput = el("input", { type: "text", required: "true", maxlength: "120", placeholder: "제목을 입력하세요" });
-    const contentInput = el("textarea", {
-      rows: "7",
-      required: "true",
-      maxlength: "5000",
-      placeholder: "내용을 입력하세요... (YouTube 또는 SOOP VOD·캐치 URL을 붙여넣으면 영상이 자동으로 임베드됩니다)",
-    });
+    const contentInput = createRichEditor(
+      "내용을 입력하세요... (YouTube 또는 SOOP VOD·캐치 URL을 붙여넣으면 영상이 자동으로 임베드됩니다)"
+    );
 
     const { toggleBtn: emojiToggleBtn, pickerBox } = buildEmoticonPicker(contentInput, 10);
 
@@ -1558,27 +1678,17 @@
     const isAdmin = ["admin", "staff"].includes(state.user.role);
     const submitBtn = el("button", { type: "submit", className: "btn btn-pink", textContent: "등록" });
 
-    const emoLivePreview = el("div", { className: "info-box hidden", style: "line-height:1.7" });
-    const updateLivePreview = () => {
-      const val = contentInput.value || "";
-      if (/\[\[이모티콘:\d+\]\]/.test(val)) {
-        emoLivePreview.classList.remove("hidden");
-        renderRichPostBody(emoLivePreview, val, false);
-      } else {
-        emoLivePreview.classList.add("hidden");
-      }
-    };
-    contentInput.addEventListener("input", updateLivePreview);
-
     const form = el("form", { className: "form-stack" }, [
       el("label", {}, ["게시판", tabSelect]),
       el("label", {}, ["제목 *", titleInput]),
-      el("label", {}, ["내용 *", contentInput]),
-      emoLivePreview,
+      el("div", { className: "form-stack", style: "gap:6px" }, [
+        el("span", { style: "font-weight:600; font-size:0.9rem", textContent: "내용 *" }),
+        contentInput,
+      ]),
       el("div", { className: "row-gap" }, [emojiToggleBtn]),
       pickerBox,
       el("div", { className: "compose-hint" }, [
-        el("div", { textContent: "이모티콘을 고르면 위 미리보기와 등록된 글에서 그림으로 보입니다. (글 하나에 10개까지)" }),
+        el("div", { textContent: "이모티콘을 고르면 입력창 커서 자리에 바로 그림으로 들어갑니다. (글 하나에 10개까지)" }),
         el("div", { textContent: "▶ YouTube / SOOP VOD 링크는 본문에 붙여넣으면 자동 임베드됩니다." }),
       ]),
       el("div", { className: "row-gap", style: "justify-content:space-between; margin-top:4px" }, [
@@ -1603,6 +1713,16 @@
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const rawContent = serializeRichEditor(contentInput).trim();
+      if (!rawContent) {
+        showToast("내용을 입력하세요.");
+        contentInput.focus();
+        return;
+      }
+      if (rawContent.length > 5000) {
+        showToast("내용은 5,000자 이하로 작성해주세요.");
+        return;
+      }
       submitBtn.disabled = true;
       submitBtn.textContent = "등록 중...";
       try {
@@ -1626,7 +1746,7 @@
           body: {
             tab: tabSelect.value,
             title: titleInput.value,
-            content: contentInput.value,
+            content: rawContent,
             is_pinned: pinCheck.checked,
             is_anonymous: anonCheck.checked,
             attachments,
