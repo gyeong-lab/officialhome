@@ -1822,66 +1822,6 @@
     openModal(isEdit ? "시그니처 수정" : "새 시그니처 추가", form);
   }
 
-  const HOT_SIG_ALIAS_MAP = {
-    1019: "멍믕이",
-    1027: "익절",
-    1032: "부라",
-    1033: "꼰돔",
-    1058: "오베R",
-    1072: "진님",
-    1077: "정글on저튜브",
-    1099: "대저동족구",
-    1122: "위장",
-    1872: "약속해실전",
-    2872: "인생은실전!!",
-  };
-
-  const REAL_HOT_ALIAS_MAP = {
-    107: "츄",
-    143: "게임오버",
-    191: "간바레",
-    202: "젤리젤리",
-    266: "트월킹덕",
-    306: "백개내놔",
-    365: "체온신호탄",
-    379: "터미널",
-    499: "호텔파티",
-    500: "호미들",
-    1000: "웰컴투씨나인",
-    1027: "익절",
-    1032: "부라",
-    1033: "꼰돔",
-    1041: "라네트",
-    1058: "오베R",
-    1077: "정글on저튜브",
-    1110: "예수형",
-    1122: "[C9]위장",
-    1200: "취팔형",
-    1333: "니엘형",
-    1500: "짭예비형",
-    1515: "짭승환2",
-    1521: "오승환이다",
-    1878: "덴빌형2",
-    1888: "예멘",
-    2252: "큰오승환",
-    2999: "큰예멘",
-    3000: "씨나인",
-  };
-
-  function getSigDisplayTitle(s, range) {
-    const num = Number(s.balloon_count);
-    if (range === "hot" && HOT_SIG_ALIAS_MAP[num]) return HOT_SIG_ALIAS_MAP[num];
-    if (range === "realhot" && REAL_HOT_ALIAS_MAP[num]) return REAL_HOT_ALIAS_MAP[num];
-    return s.title;
-  }
-
-  function getSigSortGroup(title) {
-    const ch = String(title || "").trim().charAt(0);
-    if (/[가-힣]/.test(ch)) return 0;
-    if (/[A-Za-z]/.test(ch)) return 1;
-    return 2;
-  }
-
   function renderFilteredSignatures() {
     const grid = document.getElementById("signatures-grid");
     const descEl = document.getElementById("sig-range-desc");
@@ -1914,23 +1854,13 @@
     const kw = state.sigKeyword.trim().toLowerCase();
     if (kw) {
       items = items.filter(
-        (s) => getSigDisplayTitle(s, range).toLowerCase().includes(kw) || String(s.balloon_count).includes(kw)
+        (s) => s.title.toLowerCase().includes(kw) || String(s.balloon_count).includes(kw)
       );
     }
 
     if (state.sigSort === "asc") items.sort((a, b) => a.balloon_count - b.balloon_count);
     else if (state.sigSort === "desc") items.sort((a, b) => b.balloon_count - a.balloon_count);
-    else if (state.sigSort === "korean") {
-      items.sort((a, b) => {
-        const ta = getSigDisplayTitle(a, range);
-        const tb = getSigDisplayTitle(b, range);
-        const ga = getSigSortGroup(ta);
-        const gb = getSigSortGroup(tb);
-        if (ga !== gb) return ga - gb;
-        if (ga === 1) return ta.localeCompare(tb, "en", { sensitivity: "base" });
-        return ta.localeCompare(tb, "ko");
-      });
-    }
+    else if (state.sigSort === "korean") items.sort((a, b) => a.title.localeCompare(b.title, "ko"));
 
     if (!items.length) {
       grid.appendChild(el("p", { className: "muted", textContent: "검색 결과가 없습니다." }));
@@ -1939,12 +1869,11 @@
 
     const adminMode = isStaffOrAdmin();
     items.forEach((s) => {
-      const displayTitle = getSigDisplayTitle(s, range);
       const thumbChildren = [];
       if (s.image_url) {
-        thumbChildren.push(el("img", { src: s.image_url, alt: displayTitle, loading: "lazy" }));
+        thumbChildren.push(el("img", { src: s.image_url, alt: s.title, loading: "lazy" }));
       } else {
-        thumbChildren.push(el("div", { className: "sig-thumb-title", textContent: displayTitle }));
+        thumbChildren.push(el("div", { className: "sig-thumb-title", textContent: s.title }));
         thumbChildren.push(el("div", { className: "sig-thumb-num", textContent: `🎈 ${s.balloon_count.toLocaleString()}` }));
       }
       if (s.clip_url) {
@@ -1960,7 +1889,7 @@
         [
           el("div", { className: "sig-thumb" }, thumbChildren),
           el("div", { className: "sig-card-body" }, [
-            el("div", { className: "sig-card-title", textContent: displayTitle, title: displayTitle }),
+            el("div", { className: "sig-card-title", textContent: s.title, title: s.title }),
             el("span", { className: "sig-count-pill", textContent: `🎈 ${s.balloon_count.toLocaleString()}개` }),
             adminMode
               ? el("div", { className: "row-gap", style: "margin-top:auto" }, [
