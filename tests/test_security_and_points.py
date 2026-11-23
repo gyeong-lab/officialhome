@@ -553,11 +553,11 @@ class SecurityAndPointsTests(unittest.TestCase):
         self.assertTrue(buy_data["is_profile_ticket"])
         self.assertEqual(buy_data["profile_tickets"], 1)
 
-        # Use ticket to attempt Lv.0 -> Lv.1 (80% rate)
+        # Use ticket to attempt Lv.0 -> Lv.1 (60% rate)
         s_enh, enh_data = player.request("POST", "/api/profile/enhance")
         self.assertEqual(s_enh, 200)
         self.assertEqual(enh_data["old_level"], 0)
-        self.assertEqual(enh_data["rate_percent"], 80)
+        self.assertEqual(enh_data["rate_percent"], 60)
         self.assertEqual(enh_data["profile_tickets"], 0)
         self.assertIn(enh_data["new_level"], (0, 1))
 

@@ -134,7 +134,7 @@
     4: { icon: "🌟", label: "Lv.4 골드스타" },
     5: { icon: "👑", label: "Lv.5 레전드 크라운" },
   };
-  const PROFILE_ENHANCE_RATES = { 0: 80, 1: 60, 2: 40, 3: 25, 4: 12 };
+  const PROFILE_ENHANCE_RATES = { 0: 60, 1: 40, 2: 25, 3: 12, 4: 5 };
 
   function createProfileMark(level) {
     const lv = Number(level || 0);
@@ -179,8 +179,8 @@
       ]);
 
       const tableCard = el("div", { className: "muted small", style: "line-height:1.6" }, [
-        el("div", { textContent: "· Lv.1 (80%) → Lv.2 (60%) → Lv.3 (40%) → Lv.4 (25%) → Lv.5 (12%)" }),
-        el("div", { textContent: "· 강화 실패 시에도 기존 레벨은 하락하지 않습니다. (강화권은 포인트 상점에서 구매)" }),
+        el("div", { textContent: "· Lv.1 (60%) → Lv.2 (40%) → Lv.3 (25%) → Lv.4 (12%) → Lv.5 (5%)" }),
+        el("div", { textContent: "· ⚠️ 강화 실패 시 레벨이 1단계 하락합니다! (Lv.0 미만으로는 내려가지 않음)" }),
       ]);
 
       const btnRow = el("div", { className: "row-gap", style: "justify-content:flex-end" });

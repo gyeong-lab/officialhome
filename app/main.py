@@ -2535,11 +2535,11 @@ def redeem_shop_item(body: RedeemBody, session: dict = Depends(require_csrf)):
 
 PROFILE_ENHANCE_MAX_LEVEL = 5
 PROFILE_ENHANCE_RATES = {
-    0: 80,
-    1: 60,
-    2: 40,
-    3: 25,
-    4: 12,
+    0: 60,
+    1: 40,
+    2: 25,
+    3: 12,
+    4: 5,
 }
 
 
@@ -2574,7 +2574,7 @@ def enhance_profile(session: dict = Depends(require_csrf)):
 
         rate = PROFILE_ENHANCE_RATES[old_level]
         success = secrets.randbelow(100) < rate
-        new_level = old_level + 1 if success else old_level
+        new_level = old_level + 1 if success else max(0, old_level - 1)
         new_tickets = tickets - 1
 
         conn.execute(
@@ -2582,6 +2582,11 @@ def enhance_profile(session: dict = Depends(require_csrf)):
             (new_level, new_tickets, session["id"]),
         )
 
+    fail_msg = (
+        f"💥 강화 실패... (성공 확률 {rate}%) · Lv.{old_level} → Lv.{new_level}로 하락했습니다!"
+        if new_level < old_level
+        else f"💨 강화 실패... (성공 확률 {rate}%) · Lv.0 유지"
+    )
     return {
         "ok": True,
         "success": success,
@@ -2593,7 +2598,7 @@ def enhance_profile(session: dict = Depends(require_csrf)):
         "message": (
             f"✨ 강화 성공! 프로필이 Lv.{new_level}로 업그레이드되었습니다!"
             if success
-            else f"💨 강화 실패... (성공 확률 {rate}%) · 레벨은 Lv.{old_level}로 유지됩니다."
+            else fail_msg
         ),
     }
 
