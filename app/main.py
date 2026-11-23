@@ -224,8 +224,14 @@ class PostCreateBody(BaseModel):
 
 class EmoticonCreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=40)
+    pack_name: str = Field(default="체온이모티콘(1)", max_length=40)
     glyph: str = Field(default="", max_length=16)
     image_url: str = Field(default="", max_length=300)
+
+
+class EmoticonBatchBody(BaseModel):
+    pack_name: str = Field(default="체온이모티콘(1)", max_length=40)
+    items: list[EmoticonCreateBody] = Field(min_length=1, max_length=50)
 
 
 class SoopSdkConfigBody(BaseModel):
@@ -1285,8 +1291,8 @@ def _sanitize_attachments(raw_list: list[dict]) -> list[dict]:
 async def upload_media(files: list[UploadFile] = File(...), session: dict = Depends(require_csrf)):
     if not rate_limiter.allow(f"upload:{session['id']}", limit=20, window_seconds=300):
         raise HTTPException(status_code=429, detail="파일 업로드 요청이 너무 많습니다.")
-    if len(files) > 4:
-        raise HTTPException(status_code=400, detail="파일은 한 번에 최대 4개까지 첨부할 수 있습니다.")
+    if len(files) > 20:
+        raise HTTPException(status_code=400, detail="파일은 한 번에 최대 20개까지 첨부할 수 있습니다.")
 
     saved = []
     for uf in files:
@@ -2940,7 +2946,7 @@ def list_emoticons():
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT id, name, glyph, image_url, created_at FROM emoticons ORDER BY id ASC"
+            "SELECT id, name, pack_name, glyph, image_url, created_at FROM emoticons ORDER BY pack_name ASC, id ASC"
         ).fetchall()
         return {"emoticons": [dict(r) for r in rows]}
     finally:
@@ -2950,6 +2956,7 @@ def list_emoticons():
 @app.post("/api/emoticons", status_code=201)
 def create_emoticon(body: EmoticonCreateBody, staff: dict = Depends(require_admin)):
     name = clean_text(body.name, 40)
+    pack_name = clean_text(body.pack_name, 40) or "체온이모티콘(1)"
     glyph = clean_text(body.glyph, 16)
     image_url = (body.image_url or "").strip()
     if not name:
@@ -2961,14 +2968,43 @@ def create_emoticon(body: EmoticonCreateBody, staff: dict = Depends(require_admi
     now = utc_now_iso()
     with transaction() as conn:
         cur = conn.execute(
-            "INSERT INTO emoticons (name, glyph, image_url, created_by, created_at) VALUES (?, ?, ?, ?, ?)",
-            (name, glyph, image_url, staff["id"], now),
+            "INSERT INTO emoticons (name, pack_name, glyph, image_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, pack_name, glyph, image_url, staff["id"], now),
         )
         row = conn.execute(
-            "SELECT id, name, glyph, image_url, created_at FROM emoticons WHERE id = ?",
+            "SELECT id, name, pack_name, glyph, image_url, created_at FROM emoticons WHERE id = ?",
             (cur.lastrowid,),
         ).fetchone()
     return {"emoticon": dict(row)}
+
+
+@app.post("/api/emoticons/batch", status_code=201)
+def create_emoticons_batch(body: EmoticonBatchBody, staff: dict = Depends(require_admin)):
+    pack_name = clean_text(body.pack_name, 40) or "체온이모티콘(1)"
+    now = utc_now_iso()
+    created = []
+    with transaction() as conn:
+        for item in body.items:
+            name = clean_text(item.name, 40)
+            glyph = clean_text(item.glyph, 16)
+            image_url = (item.image_url or "").strip()
+            if not name or (not glyph and not image_url):
+                continue
+            if image_url and not (image_url.startswith("/uploads/") or image_url.startswith("https://") or image_url.startswith("http://")):
+                raise HTTPException(status_code=400, detail="유효하지 않은 이미지 경로입니다.")
+            cur = conn.execute(
+                "INSERT INTO emoticons (name, pack_name, glyph, image_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (name, pack_name, glyph, image_url, staff["id"], now),
+            )
+            row = conn.execute(
+                "SELECT id, name, pack_name, glyph, image_url, created_at FROM emoticons WHERE id = ?",
+                (cur.lastrowid,),
+            ).fetchone()
+            if row:
+                created.append(dict(row))
+    if not created:
+        raise HTTPException(status_code=400, detail="등록할 이모티콘이 없습니다.")
+    return {"emoticons": created, "pack_name": pack_name}
 
 
 @app.delete("/api/emoticons/{emoticon_id}")

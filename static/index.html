@@ -226,19 +226,24 @@
         <h3>➕ 새 이모티콘 등록 (관리자 전용)</h3>
         <form id="emoticon-create-form" class="form-stack mt-12">
           <div class="grid-2">
-            <label>이모티콘 이름
-              <input type="text" id="emo-name" placeholder="예: 체온하트" required maxlength="40" />
+            <label>묶음(패키지) 이름
+              <input type="text" id="emo-pack" value="체온이모티콘(1)" placeholder="예: 체온이모티콘(1)" required maxlength="40" />
+            </label>
+            <label>이모티콘 이름 (단일 등록/접두어, 선택)
+              <input type="text" id="emo-name" placeholder="비워두면 파일명 또는 번호로 자동 입력" maxlength="40" />
+            </label>
+          </div>
+          <div class="grid-2">
+            <label>이모티콘 이미지 파일 (여러 장 선택 가능 · PNG / JPG / GIF / WEBP)
+              <input type="file" id="emo-file" accept=".png,.jpg,.jpeg,.gif,.webp" multiple />
             </label>
             <label>이모지/텍스트 (이미지 없을 때)
               <input type="text" id="emo-glyph" placeholder="예: 💖" maxlength="16" />
             </label>
           </div>
-          <label>이모티콘 이미지 파일 (PNG / JPG / GIF / WEBP, 선택)
-            <input type="file" id="emo-file" accept=".png,.jpg,.jpeg,.gif,.webp" />
-          </label>
           <div class="row-gap">
             <button type="submit" class="btn btn-pink">이모티콘 등록</button>
-            <span class="muted small">등록 즉시 공홈 글쓰기·댓글 이모티콘 선택기에 반영됩니다.</span>
+            <span class="muted small">여러 장 선택 시 지정한 묶음 이름(예: 체온이모티콘(1))으로 한 번에 묶여 등록됩니다.</span>
           </div>
         </form>
       </div>
@@ -876,6 +881,6 @@
   <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
   <script src="/static/suika.js?v=20261123a"></script>
   <script src="/static/omok.js?v=20261122d"></script>
-  <script src="/static/app.js?v=20261123f"></script>
+  <script src="/static/app.js?v=20261124a"></script>
 </body>
 </html>

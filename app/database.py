@@ -459,6 +459,7 @@ _PG_SCHEMA_STATEMENTS = [
     CREATE TABLE IF NOT EXISTS emoticons (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
+        pack_name TEXT NOT NULL DEFAULT '체온이모티콘(1)',
         glyph TEXT NOT NULL DEFAULT '',
         image_url TEXT NOT NULL DEFAULT '',
         created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -543,6 +544,7 @@ def _init_pg_schema(conn: Any) -> None:
     conn.execute("ALTER TABLE omok_rooms ADD CONSTRAINT omok_rooms_stake_check CHECK (stake > 0)")
     conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_level INTEGER NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_tickets INTEGER NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE emoticons ADD COLUMN IF NOT EXISTS pack_name TEXT NOT NULL DEFAULT '체온이모티콘(1)'")
     conn.execute(
         """
         INSERT INTO shop_items (name, description, cost, stock, is_active)
@@ -782,6 +784,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS emoticons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
+                pack_name TEXT NOT NULL DEFAULT '체온이모티콘(1)',
                 glyph TEXT NOT NULL DEFAULT '',
                 image_url TEXT NOT NULL DEFAULT '',
                 created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -883,6 +886,10 @@ def init_db() -> None:
                 conn.execute("ALTER TABLE users ADD COLUMN profile_level INTEGER NOT NULL DEFAULT 0")
             if "profile_tickets" not in user_cols:
                 conn.execute("ALTER TABLE users ADD COLUMN profile_tickets INTEGER NOT NULL DEFAULT 0")
+
+            emo_cols = {row["name"] for row in conn.execute("PRAGMA table_info(emoticons)").fetchall()}
+            if "pack_name" not in emo_cols:
+                conn.execute("ALTER TABLE emoticons ADD COLUMN pack_name TEXT NOT NULL DEFAULT '체온이모티콘(1)'")
 
             conn.execute(
                 """

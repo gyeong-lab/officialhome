@@ -1293,34 +1293,65 @@
     if (!emojiEntries.length) {
       pickerBox.appendChild(el("p", { className: "muted small", textContent: "현재 등록된 이모티콘이 없습니다. (관리자가 이모티콘 탭에서 등록 가능)" }));
     } else {
-      const emojiGrid = el("div", { className: "emoji-grid" });
+      const packs = new Map();
       emojiEntries.forEach((em) => {
-        const content = em.image_url
-          ? [el("img", { src: em.image_url, alt: em.name })]
-          : [em.glyph || "😊"];
-        emojiGrid.appendChild(
-          el(
-            "button",
-            {
-              type: "button",
-              className: "emoji-btn",
-              title: em.name,
-              onClick: () => {
-                const count = (targetInput.value.match(/\[\[이모티콘:\d+\]\]/g) || []).length;
-                if (count >= maxCount) return showToast(`이모티콘은 최대 ${maxCount}개까지 넣을 수 있습니다.`);
-                const tag = `[[이모티콘:${em.id}]]`;
-                const start = targetInput.selectionStart ?? targetInput.value.length;
-                const end = targetInput.selectionEnd ?? targetInput.value.length;
-                targetInput.value = targetInput.value.slice(0, start) + tag + targetInput.value.slice(end);
-                targetInput.focus();
-                targetInput.setSelectionRange(start + tag.length, start + tag.length);
-              },
-            },
-            content
-          )
-        );
+        const pName = (em.pack_name || "체온이모티콘(1)").trim() || "체온이모티콘(1)";
+        if (!packs.has(pName)) packs.set(pName, []);
+        packs.get(pName).push(em);
       });
+      const packNames = Array.from(packs.keys());
+      let activePack = packNames[0];
+      const tabsRow = el("div", { className: "tab-pills mb-8", style: "margin-bottom:8px" });
+      const emojiGrid = el("div", { className: "emoji-grid" });
+
+      const renderPackGrid = (pName) => {
+        activePack = pName;
+        Array.from(tabsRow.children).forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.pack === activePack);
+        });
+        clear(emojiGrid);
+        (packs.get(activePack) || []).forEach((em) => {
+          const content = em.image_url
+            ? [el("img", { src: em.image_url, alt: em.name })]
+            : [em.glyph || "😊"];
+          emojiGrid.appendChild(
+            el(
+              "button",
+              {
+                type: "button",
+                className: "emoji-btn",
+                title: em.name,
+                onClick: () => {
+                  const count = (targetInput.value.match(/\[\[이모티콘:\d+\]\]/g) || []).length;
+                  if (count >= maxCount) return showToast(`이모티콘은 최대 ${maxCount}개까지 넣을 수 있습니다.`);
+                  const tag = `[[이모티콘:${em.id}]]`;
+                  const start = targetInput.selectionStart ?? targetInput.value.length;
+                  const end = targetInput.selectionEnd ?? targetInput.value.length;
+                  targetInput.value = targetInput.value.slice(0, start) + tag + targetInput.value.slice(end);
+                  targetInput.focus();
+                  targetInput.setSelectionRange(start + tag.length, start + tag.length);
+                },
+              },
+              content
+            )
+          );
+        });
+      };
+
+      packNames.forEach((pName) => {
+        const pill = el("button", {
+          type: "button",
+          className: `pill${pName === activePack ? " active" : ""}`,
+          textContent: `📦 ${pName}`,
+          onClick: () => renderPackGrid(pName),
+        });
+        pill.dataset.pack = pName;
+        tabsRow.appendChild(pill);
+      });
+
+      pickerBox.appendChild(tabsRow);
       pickerBox.appendChild(emojiGrid);
+      renderPackGrid(activePack);
     }
 
     const toggleBtn = el("button", {
@@ -1338,62 +1369,84 @@
     if (adminCard) adminCard.classList.toggle("hidden", !canManage);
 
     const list = await loadEmoticons();
-    const grid = document.getElementById("emoticons-grid");
+    const gridWrap = document.getElementById("emoticons-grid");
     const countLabel = document.getElementById("emoticon-count-label");
     if (countLabel) countLabel.textContent = `${list.length}개`;
-    if (!grid) return;
-    clear(grid);
+    if (!gridWrap) return;
+    clear(gridWrap);
     if (!list.length) {
-      grid.appendChild(el("p", { className: "muted", textContent: "현재 등록된 이모티콘이 없습니다." }));
+      gridWrap.appendChild(el("p", { className: "muted", textContent: "현재 등록된 이모티콘이 없습니다." }));
       return;
     }
+
+    const groups = new Map();
     list.forEach((em) => {
-      const preview = el(
-        "div",
-        { className: "emoticon-preview" },
-        em.image_url ? [el("img", { src: em.image_url, alt: em.name })] : [em.glyph || "😊"]
-      );
-      const actions = el("div", { className: "row-gap" }, [
-        el("button", {
-          type: "button",
-          className: "btn btn-outline btn-sm",
-          textContent: "코드복사",
-          onClick: async () => {
-            try {
-              await navigator.clipboard.writeText(`[[이모티콘:${em.id}]]`);
-              showToast(`[[이모티콘:${em.id}]] 복사됨`);
-            } catch {
-              showToast(`코드: [[이모티콘:${em.id}]]`);
-            }
-          },
-        }),
+      const pack = (em.pack_name || "체온이모티콘(1)").trim() || "체온이모티콘(1)";
+      if (!groups.has(pack)) groups.set(pack, []);
+      groups.get(pack).push(em);
+    });
+
+    gridWrap.style.display = "flex";
+    gridWrap.style.flexDirection = "column";
+    gridWrap.style.gap = "18px";
+
+    groups.forEach((items, packName) => {
+      const packHeader = el("div", { className: "row-between" }, [
+        el("h3", { textContent: `📦 ${packName}`, style: "margin:0" }),
+        el("span", { className: "badge-pink", textContent: `${items.length}개` }),
       ]);
-      if (canManage) {
-        actions.appendChild(
+      const packGrid = el("div", { className: "emoticon-grid" });
+
+      items.forEach((em) => {
+        const preview = el(
+          "div",
+          { className: "emoticon-preview" },
+          em.image_url ? [el("img", { src: em.image_url, alt: em.name })] : [em.glyph || "😊"]
+        );
+        const actions = el("div", { className: "row-gap" }, [
           el("button", {
             type: "button",
-            className: "btn btn-danger btn-sm",
-            textContent: "삭제",
+            className: "btn btn-outline btn-sm",
+            textContent: "코드복사",
             onClick: async () => {
               try {
-                await api(`/api/emoticons/${em.id}`, { method: "DELETE" });
-                showToast("이모티콘이 삭제되었습니다.");
-                loadEmoticonsPage();
-              } catch (err) {
-                showToast(err.message);
+                await navigator.clipboard.writeText(`[[이모티콘:${em.id}]]`);
+                showToast(`[[이모티콘:${em.id}]] 복사됨`);
+              } catch {
+                showToast(`코드: [[이모티콘:${em.id}]]`);
               }
             },
-          })
+          }),
+        ]);
+        if (canManage) {
+          actions.appendChild(
+            el("button", {
+              type: "button",
+              className: "btn btn-danger btn-sm",
+              textContent: "삭제",
+              onClick: async () => {
+                try {
+                  await api(`/api/emoticons/${em.id}`, { method: "DELETE" });
+                  showToast("이모티콘이 삭제되었습니다.");
+                  loadEmoticonsPage();
+                } catch (err) {
+                  showToast(err.message);
+                }
+              },
+            })
+          );
+        }
+        packGrid.appendChild(
+          el("div", { className: "emoticon-card" }, [
+            preview,
+            el("div", { className: "emoticon-name", textContent: em.name }),
+            el("div", { className: "muted small", textContent: `[[이모티콘:${em.id}]]` }),
+            actions,
+          ])
         );
-      }
-      grid.appendChild(
-        el("div", { className: "emoticon-card" }, [
-          preview,
-          el("div", { className: "emoticon-name", textContent: em.name }),
-          el("div", { className: "muted small", textContent: `[[이모티콘:${em.id}]]` }),
-          actions,
-        ])
-      );
+      });
+
+      gridWrap.appendChild(el("div", { className: "form-stack" }, [packHeader, packGrid]));
     });
   }
 
@@ -3864,22 +3917,43 @@
     document.getElementById("emoticon-create-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
-        const name = document.getElementById("emo-name").value.trim();
+        const packName = (document.getElementById("emo-pack")?.value || "").trim() || "체온이모티콘(1)";
+        const baseName = document.getElementById("emo-name").value.trim();
         const glyph = document.getElementById("emo-glyph").value.trim();
         const fileInput = document.getElementById("emo-file");
-        let image_url = "";
-        if (fileInput && fileInput.files && fileInput.files[0]) {
-          const fd = new FormData();
-          fd.append("files", fileInput.files[0]);
-          const up = await api("/api/uploads", { method: "POST", body: fd });
-          image_url = up.files?.[0]?.url || "";
+        const files = Array.from((fileInput && fileInput.files) || []);
+
+        if (files.length > 0) {
+          const uploaded = [];
+          for (let i = 0; i < files.length; i += 20) {
+            const fd = new FormData();
+            files.slice(i, i + 20).forEach((f) => fd.append("files", f));
+            const up = await api("/api/uploads", { method: "POST", body: fd });
+            (up.files || []).forEach((f) => uploaded.push(f));
+          }
+          const items = uploaded.map((uf, idx) => {
+            const rawStem = String(uf.name || "").replace(/\.[^.]+$/, "").trim();
+            const itemName = baseName
+              ? (uploaded.length > 1 ? `${baseName} ${idx + 1}` : baseName)
+              : (rawStem || `${packName} ${idx + 1}`);
+            return { name: itemName.slice(0, 40), pack_name: packName, glyph: "", image_url: uf.url };
+          });
+          await api("/api/emoticons/batch", {
+            method: "POST",
+            body: { pack_name: packName, items },
+          });
+          showToast(`📦 [${packName}] 이모티콘 ${items.length}개가 한 묶음으로 등록되었습니다!`);
+        } else {
+          if (!baseName) return showToast("이모티콘 이름을 입력하세요.");
+          await api("/api/emoticons", {
+            method: "POST",
+            body: { name: baseName, pack_name: packName, glyph, image_url: "" },
+          });
+          showToast(`📦 [${packName}] 이모티콘이 등록되었습니다!`);
         }
-        await api("/api/emoticons", {
-          method: "POST",
-          body: { name, glyph, image_url },
-        });
-        showToast("이모티콘이 등록되었습니다. 이제 공홈에서 사용할 수 있습니다!");
         e.target.reset();
+        const packInput = document.getElementById("emo-pack");
+        if (packInput) packInput.value = packName;
         await loadEmoticonsPage();
       } catch (err) {
         showToast(err.message);
