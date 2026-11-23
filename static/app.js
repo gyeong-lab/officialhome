@@ -1116,6 +1116,18 @@
       });
 
       const bodyNode = el("div", { className: "post-detail-body" });
+      const allTextForEmo = [p.content || "", ...((data.comments || []).map((c) => c.content || ""))].join(" ");
+      const neededIds = Array.from(allTextForEmo.matchAll(/\[\[이모티콘:(\d+)\]\]/g)).map((m) => m[1]);
+      if (neededIds.some((eid) => !EMOTICON_MAP[eid])) {
+        await loadEmoticons();
+        commentsWrap.querySelectorAll(".list-item").forEach((_, idx) => {
+          const cObj = (data.comments || [])[idx];
+          if (cObj) {
+            const cBodyEl = commentsWrap.children[idx]?.querySelector("div > div");
+            if (cBodyEl) renderRichPostBody(cBodyEl, cObj.content, false);
+          }
+        });
+      }
       renderRichPostBody(bodyNode, p.content);
 
       const attachWrap = el("div", { className: "attach-gallery" });
@@ -1334,6 +1346,7 @@
                   targetInput.value = targetInput.value.slice(0, start) + tag + targetInput.value.slice(end);
                   targetInput.focus();
                   targetInput.setSelectionRange(start + tag.length, start + tag.length);
+                  targetInput.dispatchEvent(new Event("input"));
                 },
               },
               content
@@ -1544,15 +1557,28 @@
     const isAdmin = ["admin", "staff"].includes(state.user.role);
     const submitBtn = el("button", { type: "submit", className: "btn btn-pink", textContent: "등록" });
 
+    const emoLivePreview = el("div", { className: "info-box hidden", style: "line-height:1.7" });
+    const updateLivePreview = () => {
+      const val = contentInput.value || "";
+      if (/\[\[이모티콘:\d+\]\]/.test(val)) {
+        emoLivePreview.classList.remove("hidden");
+        renderRichPostBody(emoLivePreview, val, false);
+      } else {
+        emoLivePreview.classList.add("hidden");
+      }
+    };
+    contentInput.addEventListener("input", updateLivePreview);
+
     const form = el("form", { className: "form-stack" }, [
       el("label", {}, ["게시판", tabSelect]),
       el("label", {}, ["제목 *", titleInput]),
       el("label", {}, ["내용 *", contentInput]),
+      emoLivePreview,
       el("div", { className: "row-gap" }, [emojiToggleBtn]),
       pickerBox,
       el("div", { className: "compose-hint" }, [
-        el("div", { textContent: "이모티콘을 고르면 커서 자리에 [[이모티콘:번호]]로 들어가고, 올린 글에서는 그림으로 보여요. (글 하나에 10개까지)" }),
-        el("div", { textContent: "▶ YouTube 영상은 링크를 본문에 붙여넣으면 자동 임베드됩니다." }),
+        el("div", { textContent: "이모티콘을 고르면 위 미리보기와 등록된 글에서 그림으로 보입니다. (글 하나에 10개까지)" }),
+        el("div", { textContent: "▶ YouTube / SOOP VOD 링크는 본문에 붙여넣으면 자동 임베드됩니다." }),
       ]),
       el("div", { className: "row-gap", style: "justify-content:space-between; margin-top:4px" }, [
         el("strong", { className: "small", textContent: "파일 첨부 (사진 · 영상, 최대 4개)" }),
