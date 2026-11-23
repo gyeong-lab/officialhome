@@ -1327,9 +1327,10 @@
         });
         clear(emojiGrid);
         (packs.get(activePack) || []).forEach((em) => {
-          const content = em.image_url
-            ? [el("img", { src: em.image_url, alt: em.name })]
-            : [em.glyph || "😊"];
+          const iconEl = em.image_url
+            ? el("img", { src: em.image_url, alt: em.name })
+            : el("span", { textContent: em.glyph || "😊" });
+          const labelEl = el("span", { className: "emoji-btn-label", textContent: em.name || "" });
           emojiGrid.appendChild(
             el(
               "button",
@@ -1349,7 +1350,7 @@
                   targetInput.dispatchEvent(new Event("input"));
                 },
               },
-              content
+              [iconEl, labelEl]
             )
           );
         });
