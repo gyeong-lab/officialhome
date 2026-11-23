@@ -72,7 +72,8 @@
   async function api(url, options = {}) {
     const method = (options.method || "GET").toUpperCase();
     const headers = { ...(options.headers || {}) };
-    if (options.body !== undefined) {
+    const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+    if (options.body !== undefined && !isFormData) {
       headers["Content-Type"] = "application/json";
     }
     if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && state.csrfToken) {
@@ -83,11 +84,14 @@
       method,
       headers,
       credentials: "same-origin",
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: options.body !== undefined ? (isFormData ? options.body : JSON.stringify(options.body)) : undefined,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.detail || "요청 처리 중 오류가 발생했습니다.");
+      let msg = "요청 처리 중 오류가 발생했습니다.";
+      if (typeof data.detail === "string") msg = data.detail;
+      else if (Array.isArray(data.detail)) msg = data.detail.map((d) => d.msg || JSON.stringify(d)).join(", ");
+      throw new Error(msg);
     }
     return data;
   }
