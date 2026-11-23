@@ -573,7 +573,7 @@ class SecurityAndPointsTests(unittest.TestCase):
         p1_row = next(p for p in list_data["posts"] if p["id"] == p1["id"])
         p2_row = next(p for p in list_data["posts"] if p["id"] == p2["id"])
         self.assertEqual(p1_row["author_profile_level"], enh_data["new_level"])
-        self.assertEqual(p2_row["author_profile_level"], 0)
+        self.assertIsNone(p2_row["author_profile_level"])
 
 
 if __name__ == "__main__":

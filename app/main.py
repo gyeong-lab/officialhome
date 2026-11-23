@@ -1376,7 +1376,7 @@ def list_posts(
                     d["author_nickname"] = f"익명 (실제: {real_nick} / {real_user}{soop_part})"
                 else:
                     d["author_nickname"] = "익명"
-                    d["author_profile_level"] = 0
+                    d["author_profile_level"] = None
             try:
                 d["attachments"] = json.loads(d.get("attachments") or "[]")
             except Exception:
@@ -1419,7 +1419,7 @@ def get_post(post_id: int, session: dict | None = Depends(get_current_session)):
                 post_dict["author_nickname"] = f"익명 (실제: {real_nick} / {real_user}{soop_part})"
             else:
                 post_dict["author_nickname"] = "익명"
-                post_dict["author_profile_level"] = 0
+                post_dict["author_profile_level"] = None
         try:
             post_dict["attachments"] = json.loads(post_dict.get("attachments") or "[]")
         except Exception:
@@ -2539,6 +2539,14 @@ def redeem_shop_item(body: RedeemBody, session: dict = Depends(require_csrf)):
 
 
 PROFILE_ENHANCE_MAX_LEVEL = 5
+PROFILE_ENHANCE_NAMES = {
+    0: "개돼지",
+    1: "온딴섬",
+    2: "죄수번호 486",
+    3: "하녀",
+    4: "공주",
+    5: "여왕",
+}
 PROFILE_ENHANCE_RATES = {
     0: 60,
     1: 40,
@@ -2587,10 +2595,12 @@ def enhance_profile(session: dict = Depends(require_csrf)):
             (new_level, new_tickets, session["id"]),
         )
 
+    old_name = PROFILE_ENHANCE_NAMES.get(old_level, f"Lv.{old_level}")
+    new_name = PROFILE_ENHANCE_NAMES.get(new_level, f"Lv.{new_level}")
     fail_msg = (
-        f"💥 강화 실패... (성공 확률 {rate}%) · Lv.{old_level} → Lv.{new_level}로 하락했습니다!"
+        f"💥 강화 실패... (성공 확률 {rate}%) · Lv.{old_level}({old_name}) → Lv.{new_level}({new_name})로 하락했습니다!"
         if new_level < old_level
-        else f"💨 강화 실패... (성공 확률 {rate}%) · Lv.0 유지"
+        else f"💨 강화 실패... (성공 확률 {rate}%) · Lv.0({new_name}) 유지"
     )
     return {
         "ok": True,
@@ -2601,7 +2611,7 @@ def enhance_profile(session: dict = Depends(require_csrf)):
         "profile_tickets": new_tickets,
         "next_rate": PROFILE_ENHANCE_RATES.get(new_level),
         "message": (
-            f"✨ 강화 성공! 프로필이 Lv.{new_level}로 업그레이드되었습니다!"
+            f"✨ 강화 성공! Lv.{new_level} [{new_name}] 등급으로 업그레이드되었습니다!"
             if success
             else fail_msg
         ),

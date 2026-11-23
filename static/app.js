@@ -128,23 +128,54 @@
   }
 
   const PROFILE_MARKS = {
-    1: { icon: "✦", label: "Lv.1 에메랄드" },
-    2: { icon: "💠", label: "Lv.2 사파이어" },
-    3: { icon: "🔮", label: "Lv.3 아메시스트" },
-    4: { icon: "🌟", label: "Lv.4 골드스타" },
-    5: { icon: "👑", label: "Lv.5 레전드 크라운" },
+    0: { icon: "🐶", label: "Lv.0 개돼지" },
+    1: { icon: "🏝️", label: "Lv.1 온딴섬" },
+    2: { icon: "⛓️", label: "Lv.2 죄수번호 486" },
+    3: { icon: "🧹", label: "Lv.3 하녀" },
+    4: { icon: "👑", label: "Lv.4 공주" },
+    5: { icon: "👑", label: "Lv.5 여왕" },
   };
   const PROFILE_ENHANCE_RATES = { 0: 60, 1: 40, 2: 25, 3: 12, 4: 5 };
 
+  const PRINCESS_CROWN_SVG =
+    '<svg viewBox="0 0 24 20" width="18" height="15" aria-hidden="true">' +
+    '<path d="M2 15 L4 6 L9 10 L12 3 L15 10 L20 6 L22 15 Z" fill="#f9a8d4" stroke="#ec4899" stroke-width="1.4" stroke-linejoin="round"/>' +
+    '<rect x="2" y="15.5" width="20" height="2.6" rx="1.2" fill="#f472b6" stroke="#db2777" stroke-width="1"/>' +
+    '<circle cx="12" cy="3" r="1.6" fill="#fff1f2" stroke="#ec4899" stroke-width="1"/>' +
+    '<circle cx="4" cy="6" r="1.2" fill="#fde047"/>' +
+    '<circle cx="20" cy="6" r="1.2" fill="#fde047"/>' +
+    '<circle cx="12" cy="11.5" r="1.7" fill="#fdf2f8" stroke="#db2777" stroke-width="0.9"/>' +
+    "</svg>";
+
+  const QUEEN_CROWN_SVG =
+    '<svg viewBox="0 0 26 22" width="21" height="18" aria-hidden="true">' +
+    '<path d="M2 16 L3.5 6 L8 11 L13 2.5 L18 11 L22.5 6 L24 16 Z" fill="#facc15" stroke="#b45309" stroke-width="1.4" stroke-linejoin="round"/>' +
+    '<rect x="2" y="16.5" width="22" height="3.2" rx="1.4" fill="#f59e0b" stroke="#92400e" stroke-width="1"/>' +
+    '<circle cx="13" cy="2.5" r="1.9" fill="#f43f5e" stroke="#fff" stroke-width="0.8"/>' +
+    '<circle cx="3.5" cy="6" r="1.4" fill="#fef08a"/>' +
+    '<circle cx="22.5" cy="6" r="1.4" fill="#fef08a"/>' +
+    '<circle cx="8.5" cy="13" r="1.4" fill="#38bdf8"/>' +
+    '<circle cx="13" cy="12" r="1.8" fill="#ec4899" stroke="#fff" stroke-width="0.7"/>' +
+    '<circle cx="17.5" cy="13" r="1.4" fill="#38bdf8"/>' +
+    "</svg>";
+
   function createProfileMark(level) {
-    const lv = Number(level || 0);
-    if (lv < 1 || lv > 5) return null;
+    if (level === null || level === undefined || level === "") return null;
+    const lv = Number(level);
+    if (!Number.isFinite(lv) || lv < 0 || lv > 5) return null;
     const meta = PROFILE_MARKS[lv];
-    return el("span", {
+    const span = el("span", {
       className: `profile-mark profile-lv-${lv}`,
-      textContent: meta.icon,
       title: meta.label,
     });
+    if (lv === 4) {
+      span.innerHTML = PRINCESS_CROWN_SVG;
+    } else if (lv === 5) {
+      span.innerHTML = QUEEN_CROWN_SVG;
+    } else {
+      span.textContent = meta.icon;
+    }
+    return span;
   }
 
   function openProfileEnhanceModal() {
@@ -165,7 +196,7 @@
           createProfileMark(lv) || el("span", { textContent: "👤 " }),
           el("span", { textContent: state.user.nickname }),
         ]),
-        el("div", { className: "badge-pink" , textContent: lv > 0 ? `Lv.${lv} (${curMeta.label})` : "Lv.0 (미강화)" }),
+        el("div", { className: "badge-pink", textContent: curMeta ? curMeta.label : `Lv.${lv}` }),
       ]);
 
       const infoRow = el("div", { className: "list-item row-between" }, [
@@ -174,13 +205,13 @@
       ]);
 
       const probRow = el("div", { className: "list-item row-between" }, [
-        el("span", { textContent: lv >= 5 ? "강화 상태" : `다음 단계 (Lv.${lv} → Lv.${lv + 1} ${nextMeta ? nextMeta.icon : ""})` }),
-        el("strong", { textContent: lv >= 5 ? "최고 레벨 달성!" : `성공 확률 ${nextRate}%` }),
+        el("span", { textContent: lv >= 5 ? "강화 상태" : `다음 단계 (${curMeta.label} → ${nextMeta ? nextMeta.label : ""})` }),
+        el("strong", { textContent: lv >= 5 ? "최고 등급 [여왕] 달성!" : `성공 확률 ${nextRate}%` }),
       ]);
 
       const tableCard = el("div", { className: "muted small", style: "line-height:1.6" }, [
-        el("div", { textContent: "· Lv.1 (60%) → Lv.2 (40%) → Lv.3 (25%) → Lv.4 (12%) → Lv.5 (5%)" }),
-        el("div", { textContent: "· ⚠️ 강화 실패 시 레벨이 1단계 하락합니다! (Lv.0 미만으로는 내려가지 않음)" }),
+        el("div", { textContent: "· 🐶개돼지 → 🏝️온딴섬(60%) → ⛓️죄수번호486(40%) → 🧹하녀(25%) → 공주(12%) → 여왕(5%)" }),
+        el("div", { textContent: "· ⚠️ 강화 실패 시 레벨이 1단계 하락합니다! (Lv.0 개돼지 미만으로는 내려가지 않음)" }),
       ]);
 
       const btnRow = el("div", { className: "row-gap", style: "justify-content:flex-end" });
