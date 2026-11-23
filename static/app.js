@@ -127,6 +127,114 @@
     renderSoopLinkSection();
   }
 
+  const PROFILE_MARKS = {
+    1: { icon: "✦", label: "Lv.1 에메랄드" },
+    2: { icon: "💠", label: "Lv.2 사파이어" },
+    3: { icon: "🔮", label: "Lv.3 아메시스트" },
+    4: { icon: "🌟", label: "Lv.4 골드스타" },
+    5: { icon: "👑", label: "Lv.5 레전드 크라운" },
+  };
+  const PROFILE_ENHANCE_RATES = { 0: 80, 1: 60, 2: 40, 3: 25, 4: 12 };
+
+  function createProfileMark(level) {
+    const lv = Number(level || 0);
+    if (lv < 1 || lv > 5) return null;
+    const meta = PROFILE_MARKS[lv];
+    return el("span", {
+      className: `profile-mark profile-lv-${lv}`,
+      textContent: meta.icon,
+      title: meta.label,
+    });
+  }
+
+  function openProfileEnhanceModal() {
+    if (!state.user) return showToast("로그인 후 이용할 수 있습니다.");
+    const wrap = el("div", { className: "form-stack" });
+
+    const renderEnhanceBody = () => {
+      clear(wrap);
+      const lv = Number(state.user.profile_level || 0);
+      const tickets = Number(state.user.profile_tickets || 0);
+      const nextRate = PROFILE_ENHANCE_RATES[lv];
+      const curMeta = PROFILE_MARKS[lv];
+      const nextMeta = PROFILE_MARKS[lv + 1];
+
+      const previewBox = el("div", { className: "info-box", style: "text-align:center; padding:18px" }, [
+        el("div", { className: "muted small", textContent: "현재 내 닉네임 마크" }),
+        el("div", { style: "font-size:1.35rem; font-weight:800; margin:10px 0" }, [
+          createProfileMark(lv) || el("span", { textContent: "👤 " }),
+          el("span", { textContent: state.user.nickname }),
+        ]),
+        el("div", { className: "badge-pink" , textContent: lv > 0 ? `Lv.${lv} (${curMeta.label})` : "Lv.0 (미강화)" }),
+      ]);
+
+      const infoRow = el("div", { className: "list-item row-between" }, [
+        el("span", { textContent: "보유 프로필 강화권" }),
+        el("strong", { style: "color:var(--pink-600)", textContent: `${tickets}장` }),
+      ]);
+
+      const probRow = el("div", { className: "list-item row-between" }, [
+        el("span", { textContent: lv >= 5 ? "강화 상태" : `다음 단계 (Lv.${lv} → Lv.${lv + 1} ${nextMeta ? nextMeta.icon : ""})` }),
+        el("strong", { textContent: lv >= 5 ? "최고 레벨 달성!" : `성공 확률 ${nextRate}%` }),
+      ]);
+
+      const tableCard = el("div", { className: "muted small", style: "line-height:1.6" }, [
+        el("div", { textContent: "· Lv.1 (80%) → Lv.2 (60%) → Lv.3 (40%) → Lv.4 (25%) → Lv.5 (12%)" }),
+        el("div", { textContent: "· 강화 실패 시에도 기존 레벨은 하락하지 않습니다. (강화권은 포인트 상점에서 구매)" }),
+      ]);
+
+      const btnRow = el("div", { className: "row-gap", style: "justify-content:flex-end" });
+      if (lv < 5) {
+        const enhanceBtn = el("button", {
+          type: "button",
+          className: "btn btn-pink",
+          textContent: tickets > 0 ? `✨ 강화하기 (${nextRate}%)` : "강화권이 없습니다",
+          disabled: tickets <= 0,
+          onClick: async () => {
+            enhanceBtn.disabled = true;
+            try {
+              const res = await api("/api/profile/enhance", { method: "POST" });
+              state.user.profile_level = res.new_level;
+              state.user.profile_tickets = res.profile_tickets;
+              renderAuthArea();
+              renderHomeUserBox();
+              showToast(res.message);
+              renderEnhanceBody();
+            } catch (err) {
+              showToast(err.message);
+              enhanceBtn.disabled = false;
+            }
+          },
+        });
+        btnRow.appendChild(enhanceBtn);
+      }
+      if (tickets <= 0 && lv < 5) {
+        btnRow.appendChild(
+          el("button", {
+            type: "button",
+            className: "btn btn-outline btn-sm",
+            textContent: "🛍️ 상점으로 이동",
+            onClick: () => {
+              closeModal();
+              switchPage("points");
+              const shopPill = document.querySelector('#points-subtabs .pill[data-ptab="shop"]');
+              if (shopPill) shopPill.click();
+            },
+          })
+        );
+      }
+
+      wrap.appendChild(previewBox);
+      wrap.appendChild(infoRow);
+      wrap.appendChild(probRow);
+      wrap.appendChild(tableCard);
+      wrap.appendChild(btnRow);
+    };
+
+    renderEnhanceBody();
+    openModal("✨ 프로필 마크 강화소", wrap);
+  }
+
   function renderAuthArea() {
     const area = document.getElementById("auth-area");
     const adminBtn = document.getElementById("nav-admin-btn");
@@ -134,13 +242,35 @@
     clear(area);
 
     if (state.user) {
+      const lv = Number(state.user.profile_level || 0);
+      const markEl = createProfileMark(lv);
+      const chipChildren = [];
+      if (markEl) {
+        chipChildren.push(markEl);
+      } else {
+        chipChildren.push(el("span", { textContent: "👤" }));
+      }
+      chipChildren.push(el("span", { textContent: ` ${state.user.nickname} · ${state.user.points.toLocaleString()}P` }));
+
+      area.appendChild(
+        el(
+          "button",
+          {
+            type: "button",
+            className: `user-chip${lv > 0 ? ` user-chip-lv-${lv}` : ""}`,
+            title: "내 프로필 및 강화소 열기",
+            onClick: openMyProfileModal,
+          },
+          chipChildren
+        )
+      );
       area.appendChild(
         el("button", {
           type: "button",
-          className: "user-chip",
-          textContent: `👤 ${state.user.nickname} · ${state.user.points.toLocaleString()}P`,
-          title: "내 프로필 및 작성 글/댓글 보기",
-          onClick: openMyProfileModal,
+          className: "btn btn-outline btn-sm",
+          textContent: `✨ 강화${state.user.profile_tickets ? ` (${state.user.profile_tickets})` : ""}`,
+          title: "프로필 마크 강화소",
+          onClick: openProfileEnhanceModal,
         })
       );
       area.appendChild(
@@ -609,10 +739,10 @@
       badges.push(el("span", { className: "badge-pink", textContent: TAB_LABELS[p.tab] || p.tab }));
 
       const rightControls = el("div", { className: "row-gap" }, [
-        el("span", {
-          className: "post-meta",
-          textContent: `${p.author_nickname} · ${formatDate(p.created_at).slice(0, 10)} · 조회 ${p.views}`,
-        }),
+        el("span", { className: "post-meta" }, [
+          createProfileMark(p.author_profile_level),
+          document.createTextNode(`${p.author_nickname} · ${formatDate(p.created_at).slice(0, 10)} · 조회 ${p.views}`),
+        ]),
         makeLikeButton(p),
       ]);
       if (adminMode) {
@@ -726,7 +856,10 @@
               }),
             ]),
             el("div", { className: "nt-col-title" }, [titleLine]),
-            el("div", { className: "nt-col-author", textContent: p.author_nickname }),
+            el("div", { className: "nt-col-author" }, [
+              createProfileMark(p.author_profile_level),
+              document.createTextNode(p.author_nickname),
+            ]),
             el("div", { className: "nt-col-date", textContent: formatDate(p.created_at).slice(0, 10) }),
             el("div", { className: "nt-col-views", textContent: String(p.views) }),
           ])
@@ -906,7 +1039,10 @@
         commentsWrap.appendChild(
           el("div", { className: "list-item" }, [
             el("div", {}, [
-              el("strong", { textContent: c.author_nickname }),
+              el("strong", {}, [
+                createProfileMark(c.author_profile_level),
+                document.createTextNode(c.author_nickname),
+              ]),
               cBody,
             ]),
             commentRight,
@@ -990,10 +1126,11 @@
       }
 
       const wrapper = el("div", {}, [
-        el("div", {
-          className: "muted small",
-          textContent: `${TAB_LABELS[p.tab] || p.tab} · ${p.author_nickname} · ${formatDate(p.created_at)} · 조회 ${p.views}`,
-        }),
+        el("div", { className: "muted small" }, [
+          document.createTextNode(`${TAB_LABELS[p.tab] || p.tab} · `),
+          createProfileMark(p.author_profile_level),
+          document.createTextNode(`${p.author_nickname} · ${formatDate(p.created_at)} · 조회 ${p.views}`),
+        ]),
         bodyNode,
         (p.attachments || []).length ? attachWrap : null,
         detailActions,
@@ -2078,10 +2215,13 @@
                 showToast(
                   res.double_points_until
                     ? `${res.item_name} 적용 완료! (${formatDate(res.double_points_until)}까지 획득 포인트 2배)`
-                    : `${res.item_name} 교환 완료! (자동 승인)`
+                    : res.is_profile_ticket
+                      ? `✨ 프로필 강화권 구매 완료! (보유 ${res.profile_tickets}장)`
+                      : `${res.item_name} 교환 완료! (자동 승인)`
                 );
                 await refreshMe();
                 loadPointsPage();
+                if (res.is_profile_ticket) openProfileEnhanceModal();
               } catch (err) {
                 showToast(err.message);
               }

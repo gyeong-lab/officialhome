@@ -277,6 +277,8 @@ _PG_SCHEMA_STATEMENTS = [
         is_blacklisted INTEGER NOT NULL DEFAULT 0,
         ban_reason TEXT NOT NULL DEFAULT '',
         double_points_until TEXT,
+        profile_level INTEGER NOT NULL DEFAULT 0 CHECK(profile_level >= 0 AND profile_level <= 5),
+        profile_tickets INTEGER NOT NULL DEFAULT 0 CHECK(profile_tickets >= 0),
         created_at TEXT NOT NULL
     )
     """,
@@ -539,6 +541,15 @@ def _init_pg_schema(conn: Any) -> None:
     )
     conn.execute("ALTER TABLE omok_rooms DROP CONSTRAINT IF EXISTS omok_rooms_stake_check")
     conn.execute("ALTER TABLE omok_rooms ADD CONSTRAINT omok_rooms_stake_check CHECK (stake > 0)")
+    conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_level INTEGER NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_tickets INTEGER NOT NULL DEFAULT 0")
+    conn.execute(
+        """
+        INSERT INTO shop_items (name, description, cost, stock, is_active)
+        SELECT '✨ 프로필 강화권', '닉네임 앞 마크를 최대 Lv.5까지 강화할 수 있는 강화권 1장! (강화할수록 성공 확률이 낮아집니다)', 500, 999999, 1
+        WHERE NOT EXISTS (SELECT 1 FROM shop_items WHERE name = '✨ 프로필 강화권')
+        """
+    )
 
 
 def _migrate_gifts_type_check_if_needed() -> None:
@@ -604,6 +615,8 @@ def init_db() -> None:
                 is_blacklisted INTEGER NOT NULL DEFAULT 0,
                 ban_reason TEXT NOT NULL DEFAULT '',
                 double_points_until TEXT,
+                profile_level INTEGER NOT NULL DEFAULT 0 CHECK(profile_level >= 0 AND profile_level <= 5),
+                profile_tickets INTEGER NOT NULL DEFAULT 0 CHECK(profile_tickets >= 0),
                 created_at TEXT NOT NULL
             );
 
@@ -865,6 +878,18 @@ def init_db() -> None:
                 conn.execute("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''")
             if "double_points_until" not in user_cols:
                 conn.execute("ALTER TABLE users ADD COLUMN double_points_until TEXT")
+            if "profile_level" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN profile_level INTEGER NOT NULL DEFAULT 0")
+            if "profile_tickets" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN profile_tickets INTEGER NOT NULL DEFAULT 0")
+
+            conn.execute(
+                """
+                INSERT INTO shop_items (name, description, cost, stock, is_active)
+                SELECT '✨ 프로필 강화권', '닉네임 앞 마크를 최대 Lv.5까지 강화할 수 있는 강화권 1장! (강화할수록 성공 확률이 낮아집니다)', 500, 999999, 1
+                WHERE NOT EXISTS (SELECT 1 FROM shop_items WHERE name = '✨ 프로필 강화권')
+                """
+            )
 
             pred_cols = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
             if "options_json" not in pred_cols:

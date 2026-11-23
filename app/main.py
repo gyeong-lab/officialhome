@@ -3,6 +3,7 @@ import html as html_lib
 import json
 import os
 import re
+import secrets
 import time
 import urllib.error
 import urllib.parse
@@ -132,7 +133,8 @@ def get_current_session(request: Request) -> dict | None:
             SELECT s.token_hash, s.csrf_token, s.expires_at,
                    u.id, u.username, u.nickname, u.role, u.points,
                    u.soop_id, u.soop_verified, u.soop_pending_id, u.soop_verify_code,
-                   u.ban_until, u.is_blacklisted, u.ban_reason, u.double_points_until
+                   u.ban_until, u.is_blacklisted, u.ban_reason, u.double_points_until,
+                   u.profile_level, u.profile_tickets
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ? AND s.expires_at > ?
@@ -181,6 +183,8 @@ def _serialize_user(row: dict) -> dict:
         "soop_pending_id": row["soop_pending_id"],
         "soop_verify_code": row["soop_verify_code"],
         "double_points_until": row.get("double_points_until"),
+        "profile_level": int(row.get("profile_level") or 0),
+        "profile_tickets": int(row.get("profile_tickets") or 0),
     }
 
 
@@ -1335,7 +1339,7 @@ def list_posts(
         is_mod = bool(session and session["role"] in ("admin", "staff"))
         sql = """
             SELECT p.id, p.tab, p.title, p.content, p.author_id, p.is_pinned, p.is_anonymous, p.is_hidden, p.attachments, p.views, p.created_at,
-                   u.nickname AS author_nickname, u.username AS author_username, u.soop_id AS author_soop_id, u.role AS author_role,
+                   u.nickname AS author_nickname, u.username AS author_username, u.soop_id AS author_soop_id, u.role AS author_role, u.profile_level AS author_profile_level,
                    (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
                    (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) AS like_count,
                    (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = ?) AS liked_by_me
@@ -1371,6 +1375,7 @@ def list_posts(
                     d["author_nickname"] = f"익명 (실제: {real_nick} / {real_user}{soop_part})"
                 else:
                     d["author_nickname"] = "익명"
+                    d["author_profile_level"] = 0
             try:
                 d["attachments"] = json.loads(d.get("attachments") or "[]")
             except Exception:
@@ -1389,7 +1394,7 @@ def get_post(post_id: int, session: dict | None = Depends(get_current_session)):
         conn.execute("UPDATE posts SET views = views + 1 WHERE id = ?", (post_id,))
         post = conn.execute(
             """
-            SELECT p.*, u.nickname AS author_nickname, u.username AS author_username, u.soop_id AS author_soop_id, u.role AS author_role,
+            SELECT p.*, u.nickname AS author_nickname, u.username AS author_username, u.soop_id AS author_soop_id, u.role AS author_role, u.profile_level AS author_profile_level,
                    (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) AS like_count,
                    (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = ?) AS liked_by_me
             FROM posts p
@@ -1413,6 +1418,7 @@ def get_post(post_id: int, session: dict | None = Depends(get_current_session)):
                 post_dict["author_nickname"] = f"익명 (실제: {real_nick} / {real_user}{soop_part})"
             else:
                 post_dict["author_nickname"] = "익명"
+                post_dict["author_profile_level"] = 0
         try:
             post_dict["attachments"] = json.loads(post_dict.get("attachments") or "[]")
         except Exception:
@@ -1420,7 +1426,7 @@ def get_post(post_id: int, session: dict | None = Depends(get_current_session)):
 
         comments = conn.execute(
             """
-            SELECT c.*, u.nickname AS author_nickname, u.role AS author_role
+            SELECT c.*, u.nickname AS author_nickname, u.role AS author_role, u.profile_level AS author_profile_level
             FROM comments c
             JOIN users u ON u.id = c.author_id
             WHERE c.post_id = ?
@@ -2478,7 +2484,9 @@ def redeem_shop_item(body: RedeemBody, session: dict = Depends(require_csrf)):
             raise HTTPException(status_code=400, detail=str(e))
 
         is_double_item = ("두배" in item["name"]) or ("2배" in item["name"])
+        is_profile_ticket = ("프로필 강화" in item["name"]) or ("강화권" in item["name"])
         double_until_iso = None
+        new_tickets = None
         redemption_status = "approved"
         if is_double_item:
             now_utc = datetime.now(timezone.utc)
@@ -2498,6 +2506,15 @@ def redeem_shop_item(body: RedeemBody, session: dict = Depends(require_csrf)):
             redemption_status = "approved"
             if not note:
                 note = "7일간 포인트 2배 부스터 자동 적용"
+        elif is_profile_ticket:
+            conn.execute(
+                "UPDATE users SET profile_tickets = profile_tickets + 1 WHERE id = ?",
+                (session["id"],),
+            )
+            t_row = conn.execute("SELECT profile_tickets FROM users WHERE id = ?", (session["id"],)).fetchone()
+            new_tickets = int(t_row["profile_tickets"]) if t_row else 1
+            if not note:
+                note = f"프로필 강화권 1장 지급 (보유 {new_tickets}장)"
 
         conn.execute("UPDATE shop_items SET stock = stock - 1 WHERE id = ?", (item["id"],))
         conn.execute(
@@ -2507,7 +2524,78 @@ def redeem_shop_item(body: RedeemBody, session: dict = Depends(require_csrf)):
             """,
             (session["id"], item["id"], item["name"], item["cost"], note, redemption_status, utc_now_iso()),
         )
-        return {"balance": new_balance, "item_name": item["name"], "double_points_until": double_until_iso}
+        return {
+            "balance": new_balance,
+            "item_name": item["name"],
+            "double_points_until": double_until_iso,
+            "is_profile_ticket": is_profile_ticket,
+            "profile_tickets": new_tickets,
+        }
+
+
+PROFILE_ENHANCE_MAX_LEVEL = 5
+PROFILE_ENHANCE_RATES = {
+    0: 80,
+    1: 60,
+    2: 40,
+    3: 25,
+    4: 12,
+}
+
+
+@app.get("/api/profile/enhance")
+def get_profile_enhance_info(session: dict = Depends(require_user)):
+    level = int(session.get("profile_level") or 0)
+    tickets = int(session.get("profile_tickets") or 0)
+    return {
+        "profile_level": level,
+        "profile_tickets": tickets,
+        "max_level": PROFILE_ENHANCE_MAX_LEVEL,
+        "rates": PROFILE_ENHANCE_RATES,
+        "next_rate": PROFILE_ENHANCE_RATES.get(level),
+    }
+
+
+@app.post("/api/profile/enhance")
+def enhance_profile(session: dict = Depends(require_csrf)):
+    with transaction() as conn:
+        row = conn.execute(
+            "SELECT profile_level, profile_tickets FROM users WHERE id = ?",
+            (session["id"],),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        old_level = int(row["profile_level"] or 0)
+        tickets = int(row["profile_tickets"] or 0)
+        if old_level >= PROFILE_ENHANCE_MAX_LEVEL:
+            raise HTTPException(status_code=400, detail=f"이미 최고 레벨(Lv.{PROFILE_ENHANCE_MAX_LEVEL})입니다!")
+        if tickets <= 0:
+            raise HTTPException(status_code=400, detail="보유한 프로필 강화권이 없습니다. 포인트 상점에서 구매해 주세요.")
+
+        rate = PROFILE_ENHANCE_RATES[old_level]
+        success = secrets.randbelow(100) < rate
+        new_level = old_level + 1 if success else old_level
+        new_tickets = tickets - 1
+
+        conn.execute(
+            "UPDATE users SET profile_level = ?, profile_tickets = ? WHERE id = ?",
+            (new_level, new_tickets, session["id"]),
+        )
+
+    return {
+        "ok": True,
+        "success": success,
+        "old_level": old_level,
+        "new_level": new_level,
+        "rate_percent": rate,
+        "profile_tickets": new_tickets,
+        "next_rate": PROFILE_ENHANCE_RATES.get(new_level),
+        "message": (
+            f"✨ 강화 성공! 프로필이 Lv.{new_level}로 업그레이드되었습니다!"
+            if success
+            else f"💨 강화 실패... (성공 확률 {rate}%) · 레벨은 Lv.{old_level}로 유지됩니다."
+        ),
+    }
 
 
 @app.get("/api/redemptions/me")

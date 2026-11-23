@@ -527,6 +527,52 @@ class SecurityAndPointsTests(unittest.TestCase):
         self.assertEqual(s_rooms, 200)
         self.assertTrue(any(r["nickname"] == "흑돌방장" and r["wins"] == 1 for r in rooms_data["leaderboard"]))
 
+    def test_profile_ticket_and_enhance(self) -> None:
+        player = ApiClient(self.base_url)
+        _, reg = player.request(
+            "POST",
+            "/api/auth/register",
+            {"username": "enhancer", "nickname": "강화도전자", "password": "Password!123"},
+        )
+        player.csrf_token = reg["csrf_token"]
+        self.assertEqual(reg["user"]["profile_level"], 0)
+        self.assertEqual(reg["user"]["profile_tickets"], 0)
+
+        # Cannot enhance without a ticket
+        s_no, _ = player.request("POST", "/api/profile/enhance")
+        self.assertEqual(s_no, 400)
+
+        # Find profile enhance ticket in shop and buy 1
+        s_shop, shop_data = player.request("GET", "/api/shop/items")
+        self.assertEqual(s_shop, 200)
+        ticket_item = next((it for it in shop_data["items"] if "프로필 강화권" in it["name"]), None)
+        self.assertIsNotNone(ticket_item)
+
+        s_buy, buy_data = player.request("POST", "/api/shop/redeem", {"item_id": ticket_item["id"], "note": ""})
+        self.assertEqual(s_buy, 200)
+        self.assertTrue(buy_data["is_profile_ticket"])
+        self.assertEqual(buy_data["profile_tickets"], 1)
+
+        # Use ticket to attempt Lv.0 -> Lv.1 (80% rate)
+        s_enh, enh_data = player.request("POST", "/api/profile/enhance")
+        self.assertEqual(s_enh, 200)
+        self.assertEqual(enh_data["old_level"], 0)
+        self.assertEqual(enh_data["rate_percent"], 80)
+        self.assertEqual(enh_data["profile_tickets"], 0)
+        self.assertIn(enh_data["new_level"], (0, 1))
+
+        # Normal post exposes author_profile_level; anonymous post masks it to 0
+        s_p1, p1 = player.request("POST", "/api/posts", {"tab": "free", "title": "일반글", "content": "내용"})
+        self.assertEqual(s_p1, 200)
+        s_p2, p2 = player.request("POST", "/api/posts", {"tab": "free", "title": "익명글", "content": "내용", "is_anonymous": True})
+        self.assertEqual(s_p2, 200)
+
+        _, list_data = player.request("GET", "/api/posts?tab=free")
+        p1_row = next(p for p in list_data["posts"] if p["id"] == p1["id"])
+        p2_row = next(p for p in list_data["posts"] if p["id"] == p2["id"])
+        self.assertEqual(p1_row["author_profile_level"], enh_data["new_level"])
+        self.assertEqual(p2_row["author_profile_level"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
