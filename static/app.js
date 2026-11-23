@@ -2201,22 +2201,32 @@
         shopGrid.appendChild(el("p", { className: "muted", textContent: "현재 등록된 상품이 없습니다." }));
       }
       (shopData.items || []).forEach((item) => {
+        const qtyInput = el("input", {
+          type: "number",
+          min: "1",
+          max: String(Math.min(100, Math.max(1, Number(item.stock || 1)))),
+          value: "1",
+          style: "width:64px; padding:5px 8px; text-align:center",
+          title: "교환 수량",
+        });
         const actions = el("div", { className: "row-gap" }, [
+          qtyInput,
           el("button", {
             className: "btn btn-pink btn-sm",
             textContent: "교환하기",
             onClick: async () => {
               if (!state.user) return showToast("로그인이 필요합니다.");
+              const qty = Math.max(1, Math.min(100, Number(qtyInput.value || 1)));
               try {
                 const res = await api("/api/shop/redeem", {
                   method: "POST",
-                  body: { item_id: item.id, note: "" },
+                  body: { item_id: item.id, quantity: qty, note: "" },
                 });
                 showToast(
                   res.double_points_until
                     ? `${res.item_name} 적용 완료! (${formatDate(res.double_points_until)}까지 획득 포인트 2배)`
                     : res.is_profile_ticket
-                      ? `✨ 프로필 강화권 구매 완료! (보유 ${res.profile_tickets}장)`
+                      ? `✨ 프로필 강화권 ${res.quantity || qty}장 구매 완료! (보유 ${res.profile_tickets}장)`
                       : `${res.item_name} 교환 완료! (자동 승인)`
                 );
                 await refreshMe();

@@ -542,23 +542,25 @@ class SecurityAndPointsTests(unittest.TestCase):
         s_no, _ = player.request("POST", "/api/profile/enhance")
         self.assertEqual(s_no, 400)
 
-        # Find profile enhance ticket in shop and buy 1
+        # Find profile enhance ticket in shop (1000P each) and buy quantity=2 (2000P total)
         s_shop, shop_data = player.request("GET", "/api/shop/items")
         self.assertEqual(s_shop, 200)
         ticket_item = next((it for it in shop_data["items"] if "프로필 강화권" in it["name"]), None)
         self.assertIsNotNone(ticket_item)
+        self.assertEqual(ticket_item["cost"], 1000)
 
-        s_buy, buy_data = player.request("POST", "/api/shop/redeem", {"item_id": ticket_item["id"], "note": ""})
+        s_buy, buy_data = player.request("POST", "/api/shop/redeem", {"item_id": ticket_item["id"], "quantity": 2, "note": ""})
         self.assertEqual(s_buy, 200)
         self.assertTrue(buy_data["is_profile_ticket"])
-        self.assertEqual(buy_data["profile_tickets"], 1)
+        self.assertEqual(buy_data["profile_tickets"], 2)
+        self.assertEqual(buy_data["balance"], 0)
 
-        # Use ticket to attempt Lv.0 -> Lv.1 (60% rate)
+        # Use 1 ticket to attempt Lv.0 -> Lv.1 (60% rate)
         s_enh, enh_data = player.request("POST", "/api/profile/enhance")
         self.assertEqual(s_enh, 200)
         self.assertEqual(enh_data["old_level"], 0)
         self.assertEqual(enh_data["rate_percent"], 60)
-        self.assertEqual(enh_data["profile_tickets"], 0)
+        self.assertEqual(enh_data["profile_tickets"], 1)
         self.assertIn(enh_data["new_level"], (0, 1))
 
         # Normal post exposes author_profile_level; anonymous post masks it to 0

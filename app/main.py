@@ -272,6 +272,7 @@ class CalendarCreateBody(BaseModel):
 
 class RedeemBody(BaseModel):
     item_id: int
+    quantity: int = Field(default=1, ge=1, le=100)
     note: str = Field(default="", max_length=150)
 
 
@@ -2461,6 +2462,7 @@ def redeem_shop_item(body: RedeemBody, session: dict = Depends(require_csrf)):
     if not rate_limiter.allow(f"redeem:{session['id']}", limit=10, window_seconds=60):
         raise HTTPException(status_code=429, detail="요청이 너무 빠릅니다. 잠시 후 다시 시도해 주세요.")
 
+    qty = int(body.quantity)
     note = clean_text(body.note, 150)
     with transaction() as conn:
         item = conn.execute(
@@ -2469,15 +2471,17 @@ def redeem_shop_item(body: RedeemBody, session: dict = Depends(require_csrf)):
         ).fetchone()
         if not item:
             raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
-        if item["stock"] <= 0:
-            raise HTTPException(status_code=409, detail="재고가 모두 소진되었습니다.")
+        if item["stock"] < qty:
+            raise HTTPException(status_code=409, detail="재고가 부족합니다.")
 
+        total_cost = int(item["cost"]) * qty
+        qty_suffix = f" x{qty}" if qty > 1 else ""
         try:
             _, new_balance = apply_point_delta(
                 conn,
                 session["id"],
-                -int(item["cost"]),
-                f"포인트 상점 교환: {item['name']}",
+                -total_cost,
+                f"포인트 상점 교환: {item['name']}{qty_suffix}",
                 "shop",
             )
         except ValueError as e:
@@ -2501,32 +2505,33 @@ def redeem_shop_item(body: RedeemBody, session: dict = Depends(require_csrf)):
                         base_dt = prev_dt
                 except Exception:
                     pass
-            double_until_iso = (base_dt + timedelta(days=7)).isoformat()
+            double_until_iso = (base_dt + timedelta(days=7 * qty)).isoformat()
             conn.execute("UPDATE users SET double_points_until = ? WHERE id = ?", (double_until_iso, session["id"]))
             redemption_status = "approved"
             if not note:
-                note = "7일간 포인트 2배 부스터 자동 적용"
+                note = f"{7 * qty}일간 포인트 2배 부스터 자동 적용"
         elif is_profile_ticket:
             conn.execute(
-                "UPDATE users SET profile_tickets = profile_tickets + 1 WHERE id = ?",
-                (session["id"],),
+                "UPDATE users SET profile_tickets = profile_tickets + ? WHERE id = ?",
+                (qty, session["id"]),
             )
             t_row = conn.execute("SELECT profile_tickets FROM users WHERE id = ?", (session["id"],)).fetchone()
-            new_tickets = int(t_row["profile_tickets"]) if t_row else 1
+            new_tickets = int(t_row["profile_tickets"]) if t_row else qty
             if not note:
-                note = f"프로필 강화권 1장 지급 (보유 {new_tickets}장)"
+                note = f"프로필 강화권 {qty}장 지급 (보유 {new_tickets}장)"
 
-        conn.execute("UPDATE shop_items SET stock = stock - 1 WHERE id = ?", (item["id"],))
+        conn.execute("UPDATE shop_items SET stock = stock - ? WHERE id = ?", (qty, item["id"]))
         conn.execute(
             """
             INSERT INTO redemptions (user_id, item_id, item_name, cost, note, status, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (session["id"], item["id"], item["name"], item["cost"], note, redemption_status, utc_now_iso()),
+            (session["id"], item["id"], f"{item['name']}{qty_suffix}", total_cost, note, redemption_status, utc_now_iso()),
         )
         return {
             "balance": new_balance,
-            "item_name": item["name"],
+            "item_name": f"{item['name']}{qty_suffix}",
+            "quantity": qty,
             "double_points_until": double_until_iso,
             "is_profile_ticket": is_profile_ticket,
             "profile_tickets": new_tickets,
