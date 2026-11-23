@@ -1401,27 +1401,13 @@
       ]);
       const packGrid = el("div", { className: "emoticon-grid" });
 
-      items.forEach((em) => {
+      items.forEach((em, idx) => {
         const preview = el(
           "div",
           { className: "emoticon-preview" },
           em.image_url ? [el("img", { src: em.image_url, alt: em.name })] : [em.glyph || "😊"]
         );
-        const actions = el("div", { className: "row-gap" }, [
-          el("button", {
-            type: "button",
-            className: "btn btn-outline btn-sm",
-            textContent: "코드복사",
-            onClick: async () => {
-              try {
-                await navigator.clipboard.writeText(`[[이모티콘:${em.id}]]`);
-                showToast(`[[이모티콘:${em.id}]] 복사됨`);
-              } catch {
-                showToast(`코드: [[이모티콘:${em.id}]]`);
-              }
-            },
-          }),
-        ]);
+        const actions = el("div", { className: "row-gap" });
         if (canManage) {
           actions.appendChild(
             el("button", {
@@ -1443,9 +1429,8 @@
         packGrid.appendChild(
           el("div", { className: "emoticon-card" }, [
             preview,
-            el("div", { className: "emoticon-name", textContent: em.name }),
-            el("div", { className: "muted small", textContent: `[[이모티콘:${em.id}]]` }),
-            actions,
+            el("div", { className: "emoticon-name", textContent: `${idx + 1}. ${em.name}` }),
+            canManage ? actions : null,
           ])
         );
       });
