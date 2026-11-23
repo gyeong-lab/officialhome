@@ -1598,6 +1598,12 @@ html, body {
   font-size: 0.95em;
   line-height: 1;
   vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.profile-mark svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .profile-lv-0 {

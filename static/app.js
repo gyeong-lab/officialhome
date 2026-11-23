@@ -209,9 +209,18 @@
         el("strong", { textContent: lv >= 5 ? "최고 등급 [여왕] 달성!" : `성공 확률 ${nextRate}%` }),
       ]);
 
-      const tableCard = el("div", { className: "muted small", style: "line-height:1.6" }, [
-        el("div", { textContent: "· 🐶개돼지 → 🏝️온딴섬(60%) → ⛓️죄수번호486(40%) → 🧹하녀(25%) → 공주(12%) → 여왕(5%)" }),
-        el("div", { textContent: "· ⚠️ 강화 실패 시 레벨이 1단계 하락합니다! (Lv.0 개돼지 미만으로는 내려가지 않음)" }),
+      const rankChips = [0, 1, 2, 3, 4, 5].map((rLv) => {
+        const rm = PROFILE_MARKS[rLv];
+        const rateTxt = rLv > 0 ? ` (${PROFILE_ENHANCE_RATES[rLv - 1]}%)` : "";
+        return el("span", { className: "suika-evo-chip" }, [
+          createProfileMark(rLv),
+          document.createTextNode(`${rm.label.replace(/^Lv\.\d+\s*/, "")}${rateTxt}`),
+        ]);
+      });
+
+      const tableCard = el("div", { className: "form-stack" }, [
+        el("div", { className: "suika-evo-strip" }, rankChips),
+        el("div", { className: "muted small", textContent: "⚠️ 강화 실패 시 레벨이 1단계 하락합니다! (Lv.0 개돼지 미만으로는 내려가지 않음)" }),
       ]);
 
       const btnRow = el("div", { className: "row-gap", style: "justify-content:flex-end" });
