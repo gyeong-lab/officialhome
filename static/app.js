@@ -3916,6 +3916,12 @@
 
     document.getElementById("emoticon-create-form").addEventListener("submit", async (e) => {
       e.preventDefault();
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      const origBtnText = submitBtn ? submitBtn.textContent : "이모티콘 등록";
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "⏳ 등록 중...";
+      }
       try {
         const packName = (document.getElementById("emo-pack")?.value || "").trim() || "체온이모티콘(1)";
         const baseName = document.getElementById("emo-name").value.trim();
@@ -3925,11 +3931,18 @@
 
         if (files.length > 0) {
           const uploaded = [];
-          for (let i = 0; i < files.length; i += 20) {
+          const chunkSize = 4;
+          for (let i = 0; i < files.length; i += chunkSize) {
+            if (submitBtn) {
+              submitBtn.textContent = `⏳ 업로드 중... (${Math.min(i + chunkSize, files.length)}/${files.length})`;
+            }
             const fd = new FormData();
-            files.slice(i, i + 20).forEach((f) => fd.append("files", f));
+            files.slice(i, i + chunkSize).forEach((f) => fd.append("files", f));
             const up = await api("/api/uploads", { method: "POST", body: fd });
             (up.files || []).forEach((f) => uploaded.push(f));
+          }
+          if (!uploaded.length) {
+            throw new Error("업로드된 이미지가 없습니다. 파일 형식(PNG/JPG/GIF/WEBP)과 용량(15MB 이하)을 확인해주세요.");
           }
           const items = uploaded.map((uf, idx) => {
             const rawStem = String(uf.name || "").replace(/\.[^.]+$/, "").trim();
@@ -3944,7 +3957,7 @@
           });
           showToast(`📦 [${packName}] 이모티콘 ${items.length}개가 한 묶음으로 등록되었습니다!`);
         } else {
-          if (!baseName) return showToast("이모티콘 이름을 입력하세요.");
+          if (!baseName) return showToast("이모티콘 이름을 입력하거나 이미지 파일을 선택하세요.");
           await api("/api/emoticons", {
             method: "POST",
             body: { name: baseName, pack_name: packName, glyph, image_url: "" },
@@ -3956,7 +3969,12 @@
         if (packInput) packInput.value = packName;
         await loadEmoticonsPage();
       } catch (err) {
-        showToast(err.message);
+        showToast(err.message || "이모티콘 등록 중 오류가 발생했습니다.");
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = origBtnText;
+        }
       }
     });
 

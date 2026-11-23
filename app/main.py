@@ -231,7 +231,7 @@ class EmoticonCreateBody(BaseModel):
 
 class EmoticonBatchBody(BaseModel):
     pack_name: str = Field(default="체온이모티콘(1)", max_length=40)
-    items: list[EmoticonCreateBody] = Field(min_length=1, max_length=50)
+    items: list[EmoticonCreateBody] = Field(min_length=1, max_length=100)
 
 
 class SoopSdkConfigBody(BaseModel):
@@ -1289,7 +1289,7 @@ def _sanitize_attachments(raw_list: list[dict]) -> list[dict]:
 
 @app.post("/api/uploads")
 async def upload_media(files: list[UploadFile] = File(...), session: dict = Depends(require_csrf)):
-    if not rate_limiter.allow(f"upload:{session['id']}", limit=20, window_seconds=300):
+    if not rate_limiter.allow(f"upload:{session['id']}", limit=60, window_seconds=300):
         raise HTTPException(status_code=429, detail="파일 업로드 요청이 너무 많습니다.")
     if len(files) > 20:
         raise HTTPException(status_code=400, detail="파일은 한 번에 최대 20개까지 첨부할 수 있습니다.")
