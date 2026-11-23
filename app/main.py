@@ -1096,19 +1096,23 @@ def get_soop_vods():
     if _soop_vod_cache["vods"] and now - _soop_vod_cache["ts"] < 60:
         return {"vods": _soop_vod_cache["vods"], "vod_page_url": vod_page_url}
 
-    api_url = f"https://chapi.sooplive.com/api/{SOOP_NOTICE_STATION_ID}/vods/all?page=1&per_page=8"
-    req = urllib.request.Request(
-        api_url,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "Referer": vod_page_url,
-            "Origin": "https://www.sooplive.com",
-        },
-    )
     try:
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-        items = payload.get("data") or []
+        items = []
+        for ep in ("all", "review"):
+            api_url = f"https://chapi.sooplive.com/api/{SOOP_NOTICE_STATION_ID}/vods/{ep}?page=1&per_page=8"
+            req = urllib.request.Request(
+                api_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Referer": vod_page_url,
+                    "Origin": "https://www.sooplive.com",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            items = payload.get("data") or []
+            if items:
+                break
         vods = []
         for item in items:
             title_no = item.get("title_no")
