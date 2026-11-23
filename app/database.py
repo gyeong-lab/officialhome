@@ -555,6 +555,33 @@ def _init_pg_schema(conn: Any) -> None:
     conn.execute(
         "UPDATE shop_items SET cost = 1000, description = '닉네임 앞 뱃지를 최대 Lv.5까지 강화할 수 있는 강화권 1장! (강화할수록 성공 확률이 낮아집니다)' WHERE name = '✨ 프로필 강화권'"
     )
+    _sync_signatures_v2_if_needed(conn)
+
+
+def _sync_signatures_v2_if_needed(conn: Any) -> None:
+    row = conn.execute("SELECT value FROM site_settings WHERE key = 'signatures_sync_v2'").fetchone()
+    if row and row["value"] == "1":
+        return
+    from app.chaeon_signatures import build_seed_signatures
+
+    now = utc_now_iso()
+    conn.execute("DELETE FROM signatures")
+    for title, cnt, cat, desc, badge, clip_url, tags in build_seed_signatures():
+        conn.execute(
+            """
+            INSERT INTO signatures (title, balloon_count, category, description, badge, clip_url, tags, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (title, cnt, cat, desc, badge, clip_url, tags, now),
+        )
+    conn.execute(
+        """
+        INSERT INTO site_settings (key, value, updated_at)
+        VALUES ('signatures_sync_v2', '1', ?)
+        ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = excluded.updated_at
+        """,
+        (now,),
+    )
 
 
 def _migrate_gifts_type_check_if_needed() -> None:
@@ -940,6 +967,8 @@ def init_db() -> None:
                     conn.execute("ALTER TABLE predictions ADD COLUMN options_json TEXT NOT NULL DEFAULT '[]'")
             if "closes_at" not in pred_cols:
                 conn.execute("ALTER TABLE predictions ADD COLUMN closes_at TEXT")
+
+            _sync_signatures_v2_if_needed(conn)
 
             omok_sql_row = conn.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'omok_rooms'"
