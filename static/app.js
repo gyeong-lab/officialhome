@@ -3195,6 +3195,7 @@
             [
               el("div", {}, [
                 el("div", { className: "row-gap" }, [
+                  createProfileMark(u.profile_level),
                   el("strong", { textContent: `${u.nickname} (${u.username})` }),
                   banBadge,
                 ]),
@@ -3215,6 +3216,15 @@
     const isTempBanned = Boolean(u.ban_until && new Date(u.ban_until).getTime() > nowMs);
     const isBanned = Boolean(u.is_blacklisted || isTempBanned);
     const stack = el("div", { className: "form-stack" });
+    const lv = Number(u.profile_level || 0);
+    const markMeta = PROFILE_MARKS[lv];
+    stack.appendChild(
+      el("div", { className: "row-gap" }, [
+        el("span", { className: "muted small", textContent: "프로필 뱃지:" }),
+        createProfileMark(lv),
+        el("span", { className: "badge-pink", textContent: markMeta ? markMeta.label : `Lv.${lv}` }),
+      ])
+    );
 
     const soopInfo = u.soop_verified && u.soop_id
       ? el("div", { className: "info-box" }, [

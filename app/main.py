@@ -2739,7 +2739,7 @@ def admin_soop_lookup(q: str = "", admin: dict = Depends(require_admin)):
             like = f"%{kw}%"
             rows = conn.execute(
                 """
-                SELECT id, username, nickname, role, points, soop_id, soop_verified, soop_pending_id,
+                SELECT id, username, nickname, role, points, profile_level, soop_id, soop_verified, soop_pending_id,
                        ban_until, is_blacklisted, ban_reason
                 FROM users
                 WHERE username LIKE ? OR nickname LIKE ? OR COALESCE(soop_id, '') LIKE ? OR COALESCE(soop_pending_id, '') LIKE ?
@@ -2751,7 +2751,7 @@ def admin_soop_lookup(q: str = "", admin: dict = Depends(require_admin)):
         else:
             rows = conn.execute(
                 """
-                SELECT id, username, nickname, role, points, soop_id, soop_verified, soop_pending_id,
+                SELECT id, username, nickname, role, points, profile_level, soop_id, soop_verified, soop_pending_id,
                        ban_until, is_blacklisted, ban_reason
                 FROM users
                 ORDER BY soop_verified DESC, id ASC
@@ -2762,6 +2762,7 @@ def admin_soop_lookup(q: str = "", admin: dict = Depends(require_admin)):
         for r in rows:
             d = dict(r)
             sid = d.get("soop_id") or ""
+            d["profile_level"] = int(d.get("profile_level") or 0)
             d["soop_station_url"] = f"https://www.sooplive.com/station/{sid}" if sid else ""
             results.append(d)
         return {"users": results}
