@@ -559,7 +559,7 @@ def _init_pg_schema(conn: Any) -> None:
 
 
 def _sync_signatures_v2_if_needed(conn: Any) -> None:
-    row = conn.execute("SELECT value FROM site_settings WHERE key = 'signatures_sync_v2'").fetchone()
+    row = conn.execute("SELECT value FROM site_settings WHERE key = 'signatures_sync_v3'").fetchone()
     if row and row["value"] == "1":
         return
     from app.chaeon_signatures import build_seed_signatures
@@ -577,7 +577,7 @@ def _sync_signatures_v2_if_needed(conn: Any) -> None:
     conn.execute(
         """
         INSERT INTO site_settings (key, value, updated_at)
-        VALUES ('signatures_sync_v2', '1', ?)
+        VALUES ('signatures_sync_v3', '1', ?)
         ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = excluded.updated_at
         """,
         (now,),

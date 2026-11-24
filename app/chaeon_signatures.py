@@ -397,7 +397,7 @@ RAW_CHAEON_SIGNATURES = [
     {"id": "1515", "title": "짭승환2", "clip": "https://vod.sooplive.com/player/192802535"},
     {"id": "1521", "title": "오승환이다"},
     {"id": "1551", "title": "초코핑", "clip": "https://vod.sooplive.com/player/195668683"},
-    {"id": "1554", "title": "아로케"},
+    {"id": "1555", "title": "아로케"},
     {"id": "1556", "title": "포에버아로케"},
     {"id": "1558", "title": "작은꼴망", "clip": "https://vod.sooplive.com/player/195668575"},
     {"id": "1570", "title": "포에버송플단"},
