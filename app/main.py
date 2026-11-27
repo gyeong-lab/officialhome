@@ -4030,7 +4030,7 @@ def resign_omok_pvp_room(room_id: int, session: dict = Depends(require_csrf)):
         return _omok_room_payload(conn, updated, session["id"])
 
 
-MEMORY_DAILY_REWARDS = [1000, 700, 500, 350, 250, 200, 150, 120, 100, 80]
+MEMORY_DAILY_REWARDS = [10000, 7000, 5000, 3500, 2500, 2000, 1500, 1200, 1000, 800]
 MEMORY_FALLBACK_CARDS = [
     {"id": "fb1", "name": "하트", "glyph": "💖", "image_url": ""},
     {"id": "fb2", "name": "토끼", "glyph": "🐰", "image_url": ""},
