@@ -24,6 +24,8 @@ _TABLES_WITH_ID = {
     "suika_runs",
     "omok_runs",
     "omok_rooms",
+    "memory_runs",
+    "memory_daily_settlements",
 }
 
 _INSERT_TABLE_RE = re.compile(r"^\s*INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)\b", re.IGNORECASE)
@@ -531,6 +533,26 @@ _PG_SCHEMA_STATEMENTS = [
         finished_at TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_runs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        day_kst TEXT NOT NULL,
+        elapsed_ms INTEGER NOT NULL DEFAULT 0 CHECK(elapsed_ms >= 0),
+        moves INTEGER NOT NULL DEFAULT 0 CHECK(moves >= 0),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'finished', 'forfeited')),
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_daily_settlements (
+        id SERIAL PRIMARY KEY,
+        day_kst TEXT NOT NULL UNIQUE,
+        settled_at TEXT NOT NULL,
+        winners_json TEXT NOT NULL DEFAULT '[]'
+    )
+    """,
 ]
 
 
@@ -880,6 +902,24 @@ def init_db() -> None:
                 turn_deadline TEXT,
                 created_at TEXT NOT NULL,
                 finished_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS memory_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                day_kst TEXT NOT NULL,
+                elapsed_ms INTEGER NOT NULL DEFAULT 0 CHECK(elapsed_ms >= 0),
+                moves INTEGER NOT NULL DEFAULT 0 CHECK(moves >= 0),
+                status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'finished', 'forfeited')),
+                created_at TEXT NOT NULL,
+                finished_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS memory_daily_settlements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day_kst TEXT NOT NULL UNIQUE,
+                settled_at TEXT NOT NULL,
+                winners_json TEXT NOT NULL DEFAULT '[]'
             );
             """
         )

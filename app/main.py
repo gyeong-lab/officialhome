@@ -4030,6 +4030,271 @@ def resign_omok_pvp_room(room_id: int, session: dict = Depends(require_csrf)):
         return _omok_room_payload(conn, updated, session["id"])
 
 
+MEMORY_DAILY_REWARDS = [1000, 700, 500, 350, 250, 200, 150, 120, 100, 80]
+MEMORY_FALLBACK_CARDS = [
+    {"id": "fb1", "name": "하트", "glyph": "💖", "image_url": ""},
+    {"id": "fb2", "name": "토끼", "glyph": "🐰", "image_url": ""},
+    {"id": "fb3", "name": "딸기", "glyph": "🍓", "image_url": ""},
+    {"id": "fb4", "name": "리본", "glyph": "🎀", "image_url": ""},
+    {"id": "fb5", "name": "체리", "glyph": "🍒", "image_url": ""},
+    {"id": "fb6", "name": "별빛", "glyph": "✨", "image_url": ""},
+    {"id": "fb7", "name": "왕관", "glyph": "👑", "image_url": ""},
+    {"id": "fb8", "name": "케이크", "glyph": "🍰", "image_url": ""},
+]
+
+
+class MemoryFinishBody(BaseModel):
+    run_id: int
+    moves: int = Field(ge=8, le=300)
+    elapsed_ms: int = Field(ge=2500, le=600000)
+
+
+def _get_memory_cards(conn: Any) -> list[dict]:
+    rows = conn.execute(
+        "SELECT id, name, glyph, image_url FROM emoticons ORDER BY (CASE WHEN image_url != '' THEN 0 ELSE 1 END), id ASC LIMIT 8"
+    ).fetchall()
+    cards = [
+        {
+            "id": f"em_{r['id']}",
+            "name": r["name"],
+            "glyph": r["glyph"] or "",
+            "image_url": r["image_url"] or "",
+        }
+        for r in rows
+    ]
+    idx = 0
+    while len(cards) < 8 and idx < len(MEMORY_FALLBACK_CARDS):
+        cards.append(MEMORY_FALLBACK_CARDS[idx])
+        idx += 1
+    return cards
+
+
+def _build_memory_daily_top10(conn: Any, day_kst: str) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT r.id, r.user_id, r.elapsed_ms, r.moves, r.finished_at, u.nickname
+        FROM memory_runs r
+        JOIN users u ON u.id = r.user_id
+        WHERE r.day_kst = ? AND r.status = 'finished'
+        ORDER BY r.elapsed_ms ASC, r.moves ASC, r.finished_at ASC, r.id ASC
+        """,
+        (day_kst,),
+    ).fetchall()
+    best_by_user: dict[int, dict] = {}
+    for r in rows:
+        uid = int(r["user_id"])
+        if uid not in best_by_user:
+            best_by_user[uid] = {
+                "user_id": uid,
+                "nickname": r["nickname"],
+                "elapsed_ms": int(r["elapsed_ms"]),
+                "moves": int(r["moves"]),
+                "finished_at": r["finished_at"],
+            }
+    ranked = sorted(
+        best_by_user.values(),
+        key=lambda x: (x["elapsed_ms"], x["moves"], x["finished_at"] or ""),
+    )[:10]
+    for idx, entry in enumerate(ranked):
+        entry["rank"] = idx + 1
+        entry["reward"] = MEMORY_DAILY_REWARDS[idx]
+    return ranked
+
+
+def _settle_memory_previous_days(conn: Any, today_kst: str) -> None:
+    unsettled_rows = conn.execute(
+        """
+        SELECT DISTINCT r.day_kst
+        FROM memory_runs r
+        WHERE r.status = 'finished'
+          AND r.day_kst < ?
+          AND NOT EXISTS (
+              SELECT 1 FROM memory_daily_settlements s WHERE s.day_kst = r.day_kst
+          )
+        ORDER BY r.day_kst ASC
+        """,
+        (today_kst,),
+    ).fetchall()
+    now = utc_now_iso()
+    for drow in unsettled_rows:
+        day_str = drow["day_kst"]
+        top10 = _build_memory_daily_top10(conn, day_str)
+        cur = conn.execute(
+            """
+            INSERT INTO memory_daily_settlements (day_kst, settled_at, winners_json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(day_kst) DO NOTHING
+            """,
+            (day_str, now, json.dumps(top10, ensure_ascii=False)),
+        )
+        if cur.rowcount == 0:
+            continue
+        for winner in top10:
+            apply_point_delta(
+                conn,
+                int(winner["user_id"]),
+                int(winner["reward"]),
+                f"카드 짝맞추기 일일 랭킹 {winner['rank']}위 ({day_str})",
+                "game",
+                idempotency_key=f"memory_daily:{day_str}:{winner['user_id']}",
+            )
+
+
+@app.get("/api/games/memory/cards")
+def get_memory_cards():
+    conn = get_connection()
+    try:
+        return {"cards": _get_memory_cards(conn)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/games/memory/leaderboard")
+def get_memory_leaderboard():
+    today_kst = today_kst_str()
+    with transaction() as conn:
+        _settle_memory_previous_days(conn, today_kst)
+        top10 = _build_memory_daily_top10(conn, today_kst)
+        latest_settled = conn.execute(
+            "SELECT day_kst, winners_json FROM memory_daily_settlements ORDER BY day_kst DESC LIMIT 1"
+        ).fetchone()
+        yesterday_day = latest_settled["day_kst"] if latest_settled else ""
+        yesterday_winners = json.loads(latest_settled["winners_json"]) if latest_settled else []
+    return {
+        "day_kst": today_kst,
+        "rewards": MEMORY_DAILY_REWARDS,
+        "leaderboard": top10,
+        "yesterday_day": yesterday_day,
+        "yesterday_winners": yesterday_winners,
+    }
+
+
+@app.get("/api/games/memory/me")
+def get_my_memory_stats(session: dict = Depends(require_user)):
+    today_kst = today_kst_str()
+    with transaction() as conn:
+        _settle_memory_previous_days(conn, today_kst)
+        all_today = conn.execute(
+            """
+            SELECT user_id, MIN(elapsed_ms) AS best_ms
+            FROM memory_runs
+            WHERE day_kst = ? AND status = 'finished'
+            GROUP BY user_id
+            """,
+            (today_kst,),
+        ).fetchall()
+        best_today_row = conn.execute(
+            """
+            SELECT elapsed_ms, moves, finished_at
+            FROM memory_runs
+            WHERE user_id = ? AND day_kst = ? AND status = 'finished'
+            ORDER BY elapsed_ms ASC, moves ASC, finished_at ASC
+            LIMIT 1
+            """,
+            (session["id"], today_kst),
+        ).fetchone()
+        my_rank = None
+        if best_today_row:
+            top_rows = conn.execute(
+                """
+                SELECT user_id, elapsed_ms, moves, finished_at
+                FROM memory_runs
+                WHERE day_kst = ? AND status = 'finished'
+                ORDER BY elapsed_ms ASC, moves ASC, finished_at ASC, id ASC
+                """,
+                (today_kst,),
+            ).fetchall()
+            seen = set()
+            ordered_uids = []
+            for tr in top_rows:
+                uid = int(tr["user_id"])
+                if uid not in seen:
+                    seen.add(uid)
+                    ordered_uids.append(uid)
+            if int(session["id"]) in ordered_uids:
+                my_rank = ordered_uids.index(int(session["id"])) + 1
+        history = conn.execute(
+            """
+            SELECT id, day_kst, elapsed_ms, moves, finished_at
+            FROM memory_runs
+            WHERE user_id = ? AND status = 'finished'
+            ORDER BY id DESC
+            LIMIT 10
+            """,
+            (session["id"],),
+        ).fetchall()
+    return {
+        "day_kst": today_kst,
+        "total_players_today": len(all_today),
+        "my_best_today": dict(best_today_row) if best_today_row else None,
+        "my_rank": my_rank,
+        "history": [dict(h) for h in history],
+    }
+
+
+@app.post("/api/games/memory/start")
+def start_memory_game(session: dict = Depends(require_csrf)):
+    today_kst = today_kst_str()
+    now = utc_now_iso()
+    with transaction() as conn:
+        _settle_memory_previous_days(conn, today_kst)
+        conn.execute(
+            "UPDATE memory_runs SET status = 'forfeited', finished_at = ? WHERE user_id = ? AND status = 'active'",
+            (now, session["id"]),
+        )
+        cur = conn.execute(
+            "INSERT INTO memory_runs (user_id, day_kst, status, created_at) VALUES (?, ?, 'active', ?)",
+            (session["id"], today_kst, now),
+        )
+        run_id = cur.lastrowid
+    return {"run_id": run_id, "day_kst": today_kst}
+
+
+@app.post("/api/games/memory/finish")
+def finish_memory_game(body: MemoryFinishBody, session: dict = Depends(require_csrf)):
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+    with transaction() as conn:
+        run = conn.execute(
+            "SELECT id, user_id, day_kst, status, created_at FROM memory_runs WHERE id = ?",
+            (body.run_id,),
+        ).fetchone()
+        if not run or int(run["user_id"]) != int(session["id"]):
+            raise HTTPException(status_code=404, detail="진행 중인 게임을 찾을 수 없습니다.")
+        if run["status"] != "active":
+            raise HTTPException(status_code=409, detail="이미 종료된 게임입니다.")
+        started_dt = datetime.fromisoformat(run["created_at"])
+        server_ms = int((now_dt - started_dt).total_seconds() * 1000)
+        if server_ms < 2500:
+            raise HTTPException(status_code=400, detail="비정상적으로 빠른 클리어입니다. 정상 플레이만 인정됩니다.")
+        if server_ms > 600000:
+            conn.execute(
+                "UPDATE memory_runs SET status = 'forfeited', finished_at = ? WHERE id = ?",
+                (now_iso, body.run_id),
+            )
+            raise HTTPException(status_code=400, detail="제한 시간이 초과된 게임입니다.")
+
+        # Use client timer if close to server elapsed; otherwise clamp to server elapsed
+        final_ms = body.elapsed_ms if abs(server_ms - body.elapsed_ms) <= 3000 else max(2500, server_ms)
+        conn.execute(
+            """
+            UPDATE memory_runs
+            SET status = 'finished', elapsed_ms = ?, moves = ?, finished_at = ?
+            WHERE id = ?
+            """,
+            (final_ms, body.moves, now_iso, body.run_id),
+        )
+        top10 = _build_memory_daily_top10(conn, run["day_kst"])
+        my_rank = next((item["rank"] for item in top10 if int(item["user_id"]) == int(session["id"])), None)
+    return {
+        "ok": True,
+        "elapsed_ms": final_ms,
+        "moves": body.moves,
+        "day_kst": run["day_kst"],
+        "my_rank": my_rank,
+    }
+
+
 @app.get("/")
 @app.get("/notice")
 @app.get("/board")

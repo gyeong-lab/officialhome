@@ -2664,19 +2664,23 @@
     };
 
     const showGameTab = (tabName) => {
-      activeGameTab = tabName === "omok" ? "omok" : "suika";
+      activeGameTab = tabName === "omok" ? "omok" : (tabName === "memory" ? "memory" : "suika");
       document.querySelectorAll("#game-tabs .pill").forEach((b) => {
         b.classList.toggle("active", b.dataset.gtab === activeGameTab);
       });
       const suikaPanel = document.getElementById("game-panel-suika");
       const omokPanel = document.getElementById("game-panel-omok");
+      const memoryPanel = document.getElementById("game-panel-memory");
       if (suikaPanel) suikaPanel.classList.toggle("hidden", activeGameTab !== "suika");
       if (omokPanel) omokPanel.classList.toggle("hidden", activeGameTab !== "omok");
+      if (memoryPanel) memoryPanel.classList.toggle("hidden", activeGameTab !== "memory");
 
       if (activeGameTab === "suika" && window.ChaeonSuika) {
         window.ChaeonSuika.initPage(gameCtx);
       } else if (activeGameTab === "omok" && window.ChaeonOmok) {
         window.ChaeonOmok.initPage(gameCtx);
+      } else if (activeGameTab === "memory" && window.ChaeonMemory) {
+        window.ChaeonMemory.initPage(gameCtx);
       }
     };
 
@@ -3643,19 +3647,23 @@
     };
 
     const showGameTab = (tabName) => {
-      activeGameTab = tabName === "omok" ? "omok" : "suika";
+      activeGameTab = tabName === "omok" ? "omok" : (tabName === "memory" ? "memory" : "suika");
       document.querySelectorAll("#game-tabs .pill").forEach((b) => {
         b.classList.toggle("active", b.dataset.gtab === activeGameTab);
       });
       const suikaPanel = document.getElementById("game-panel-suika");
       const omokPanel = document.getElementById("game-panel-omok");
+      const memoryPanel = document.getElementById("game-panel-memory");
       if (suikaPanel) suikaPanel.classList.toggle("hidden", activeGameTab !== "suika");
       if (omokPanel) omokPanel.classList.toggle("hidden", activeGameTab !== "omok");
+      if (memoryPanel) memoryPanel.classList.toggle("hidden", activeGameTab !== "memory");
 
       if (activeGameTab === "suika" && window.ChaeonSuika) {
         window.ChaeonSuika.initPage(gameCtx);
       } else if (activeGameTab === "omok" && window.ChaeonOmok) {
         window.ChaeonOmok.initPage(gameCtx);
+      } else if (activeGameTab === "memory" && window.ChaeonMemory) {
+        window.ChaeonMemory.initPage(gameCtx);
       }
     };
 

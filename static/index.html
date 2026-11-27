@@ -11,7 +11,7 @@
   <link rel="icon" type="image/jpeg" href="/static/images/logo.jpg?v=20261120b" />
   <link rel="apple-touch-icon" href="/static/images/logo.jpg?v=20261120b" />
   <link rel="manifest" href="/static/manifest.webmanifest" />
-  <link rel="stylesheet" href="/static/styles.css?v=20261124b" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261127a" />
 </head>
 <body>
   <header class="navbar">
@@ -497,6 +497,7 @@
       <div class="tab-pills mb-12" id="game-tabs">
         <button type="button" class="pill active" data-gtab="suika">🍉 수박게임</button>
         <button type="button" class="pill" data-gtab="omok">⚫⚪ 오목</button>
+        <button type="button" class="pill" data-gtab="memory">🃏 카드 짝맞추기</button>
       </div>
 
       <div id="game-panel-suika">
@@ -683,6 +684,66 @@
             <div class="card">
               <h3>📜 내 최근 1:1 대국</h3>
               <div id="omok-my-history" class="list-stack mt-12"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="game-panel-memory" class="hidden">
+        <div class="page-head">
+          <div>
+            <h1>🃏 체온 카드 짝맞추기</h1>
+            <p class="muted">공홈 이모티콘 16장(8쌍)을 60초 안에 가장 빠르게 맞춰보세요! 매일 일일 랭킹 1~10등에게 차등 포인트가 자동 지급됩니다.</p>
+          </div>
+          <div class="row-gap">
+            <span class="badge-pink" id="memory-my-points">로그인 필요</span>
+          </div>
+        </div>
+
+        <div class="suika-layout">
+          <div class="card suika-main-card">
+            <div class="suika-mode-bar">
+              <div class="row-gap">
+                <button type="button" class="btn btn-pink btn-sm" id="memory-start-btn">🔄 새 게임 시작</button>
+                <span class="muted small" id="memory-status">새 게임 시작을 눌러 60초 안에 8쌍을 맞춰보세요!</span>
+              </div>
+            </div>
+
+            <div class="suika-hud">
+              <div class="suika-hud-box">
+                <span class="muted small">경과 시간</span>
+                <strong id="memory-time">0.00초</strong>
+              </div>
+              <div class="suika-hud-box">
+                <span class="muted small">시도 횟수</span>
+                <strong id="memory-moves">0회</strong>
+              </div>
+              <div class="suika-hud-box suika-hud-wide">
+                <span class="muted small">맞춘 짝</span>
+                <strong id="memory-pairs">0 / 8</strong>
+              </div>
+            </div>
+
+            <div id="memory-board" class="memory-board"></div>
+          </div>
+
+          <div class="suika-side">
+            <div class="card">
+              <div class="row-between">
+                <h3>🏆 오늘의 일일 랭킹 (Top 10)</h3>
+                <span class="muted small">내 최고: <strong id="memory-my-best">-</strong></span>
+              </div>
+              <div id="memory-leaderboard" class="list-stack mt-12"></div>
+            </div>
+
+            <div class="card">
+              <h3>🎁 일일 랭킹 차등 보상 (자정 KST 자동 정산)</h3>
+              <div id="memory-rewards-list" class="list-stack mt-12"></div>
+            </div>
+
+            <div class="card">
+              <h3>🎉 직전 정산 Top 10 수상자</h3>
+              <div id="memory-yesterday-list" class="list-stack mt-12"></div>
             </div>
           </div>
         </div>
@@ -884,6 +945,7 @@
   <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
   <script src="/static/suika.js?v=20261123a"></script>
   <script src="/static/omok.js?v=20261122d"></script>
-  <script src="/static/app.js?v=20261127a"></script>
+  <script src="/static/memory.js?v=20261127a"></script>
+  <script src="/static/app.js?v=20261127b"></script>
 </body>
 </html>
