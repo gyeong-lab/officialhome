@@ -229,10 +229,13 @@
             <label>묶음(패키지) 이름
               <input type="text" id="emo-pack" value="체온이모티콘(1)" placeholder="예: 체온이모티콘(1)" required maxlength="40" />
             </label>
-            <label>이모티콘 이름 (단일 등록/접두어, 선택)
-              <input type="text" id="emo-name" placeholder="비워두면 파일명 또는 번호로 자동 입력" maxlength="40" />
+            <label>선물하기 포인트 (P)
+              <input type="number" id="emo-gift-cost" value="1000" min="0" max="1000000" step="100" required />
             </label>
           </div>
+          <label>이모티콘 이름 (단일 등록/접두어, 선택)
+            <input type="text" id="emo-name" placeholder="비워두면 파일명 또는 번호로 자동 입력" maxlength="40" />
+          </label>
           <div class="grid-2">
             <label>이모티콘 이미지 파일 (여러 장 선택 가능 · PNG / JPG / GIF / WEBP)
               <input type="file" id="emo-file" accept=".png,.jpg,.jpeg,.gif,.webp" multiple />
@@ -881,6 +884,6 @@
   <script src="https://static.sooplive.com/build/chat-sdk/sooplive-chat-sdk.js"></script>
   <script src="/static/suika.js?v=20261123a"></script>
   <script src="/static/omok.js?v=20261122d"></script>
-  <script src="/static/app.js?v=20261125a"></script>
+  <script src="/static/app.js?v=20261127a"></script>
 </body>
 </html>

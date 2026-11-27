@@ -4070,6 +4070,8 @@
       }
       try {
         const packName = (document.getElementById("emo-pack")?.value || "").trim() || "체온이모티콘(1)";
+        const giftCostRaw = Number(document.getElementById("emo-gift-cost")?.value ?? 1000);
+        const giftCost = Number.isFinite(giftCostRaw) && giftCostRaw >= 0 ? Math.floor(giftCostRaw) : 1000;
         const baseName = document.getElementById("emo-name").value.trim();
         const glyph = document.getElementById("emo-glyph").value.trim();
         const fileInput = document.getElementById("emo-file");
@@ -4095,24 +4097,26 @@
             const itemName = baseName
               ? (uploaded.length > 1 ? `${baseName} ${idx + 1}` : baseName)
               : (rawStem || `${packName} ${idx + 1}`);
-            return { name: itemName.slice(0, 40), pack_name: packName, glyph: "", image_url: uf.url };
+            return { name: itemName.slice(0, 40), pack_name: packName, glyph: "", image_url: uf.url, gift_cost: giftCost };
           });
           await api("/api/emoticons/batch", {
             method: "POST",
-            body: { pack_name: packName, items },
+            body: { pack_name: packName, gift_cost: giftCost, items },
           });
-          showToast(`📦 [${packName}] 이모티콘 ${items.length}개가 한 묶음으로 등록되었습니다!`);
+          showToast(`📦 [${packName}] 이모티콘 ${items.length}개가 한 묶음(${giftCost.toLocaleString()}P)으로 등록되었습니다!`);
         } else {
           if (!baseName) return showToast("이모티콘 이름을 입력하거나 이미지 파일을 선택하세요.");
           await api("/api/emoticons", {
             method: "POST",
-            body: { name: baseName, pack_name: packName, glyph, image_url: "" },
+            body: { name: baseName, pack_name: packName, glyph, image_url: "", gift_cost: giftCost },
           });
-          showToast(`📦 [${packName}] 이모티콘이 등록되었습니다!`);
+          showToast(`📦 [${packName}] 이모티콘(${giftCost.toLocaleString()}P)이 등록되었습니다!`);
         }
         e.target.reset();
         const packInput = document.getElementById("emo-pack");
         if (packInput) packInput.value = packName;
+        const costInput = document.getElementById("emo-gift-cost");
+        if (costInput) costInput.value = String(giftCost);
         await loadEmoticonsPage();
       } catch (err) {
         showToast(err.message || "이모티콘 등록 중 오류가 발생했습니다.");

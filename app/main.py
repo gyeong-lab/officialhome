@@ -227,10 +227,12 @@ class EmoticonCreateBody(BaseModel):
     pack_name: str = Field(default="체온이모티콘(1)", max_length=40)
     glyph: str = Field(default="", max_length=16)
     image_url: str = Field(default="", max_length=300)
+    gift_cost: int = Field(default=1000, ge=0, le=1000000)
 
 
 class EmoticonBatchBody(BaseModel):
     pack_name: str = Field(default="체온이모티콘(1)", max_length=40)
+    gift_cost: int = Field(default=1000, ge=0, le=1000000)
     items: list[EmoticonCreateBody] = Field(min_length=1, max_length=100)
 
 
@@ -372,7 +374,7 @@ class GiftSendBody(BaseModel):
     gift_type: Literal["point", "item", "emoticon", "voucher"]
     amount: int | None = Field(default=None, ge=10, le=1000000)
     item_id: int | None = None
-    emoticon_id: str | None = Field(default=None, max_length=20)
+    emoticon_id: str | None = Field(default=None, max_length=64)
     voucher_value: int | None = None
     quantity: int = Field(default=1, ge=1, le=50)
     message: str = Field(default="", max_length=120)
@@ -2160,8 +2162,28 @@ def get_gift_options():
     conn = get_connection()
     try:
         items = conn.execute("SELECT id, name, description, cost, stock FROM shop_items WHERE is_active = 1 AND stock > 0 ORDER BY cost ASC").fetchall()
+        pack_rows = conn.execute(
+            """
+            SELECT pack_name, COUNT(*) AS item_count, MAX(gift_cost) AS gift_cost
+            FROM emoticons
+            GROUP BY pack_name
+            ORDER BY MIN(id) ASC
+            """
+        ).fetchall()
+        emoticons = [
+            {
+                "id": r["pack_name"],
+                "name": f"{r['pack_name']} ({int(r['item_count'])}종)",
+                "pack_name": r["pack_name"],
+                "cost": int(r["gift_cost"] if r["gift_cost"] is not None else 1000),
+            }
+            for r in pack_rows
+            if (r["pack_name"] or "").strip()
+        ]
+        if not emoticons and GIFT_EMOTICON_PACKS:
+            emoticons = GIFT_EMOTICON_PACKS
         return {
-            "emoticons": GIFT_EMOTICON_PACKS,
+            "emoticons": emoticons,
             "items": [dict(i) for i in items],
         }
     finally:
@@ -2295,21 +2317,33 @@ def send_gift(body: GiftSendBody, session: dict = Depends(require_csrf)):
             title = f"+{body.voucher_value:,}P 선물권 x{qty}장"
             new_balance = session["points"]
         else:  # emoticon
-            pack = next((e for e in GIFT_EMOTICON_PACKS if e["id"] == body.emoticon_id), None)
-            if not pack:
-                raise HTTPException(status_code=400, detail="선물할 이모티콘을 선택해 주세요.")
-            cost = int(pack["cost"])
-            title = pack["name"]
-            try:
-                _, new_balance = apply_point_delta(
-                    conn,
-                    session["id"],
-                    -cost,
-                    f"이모티콘 선물 ({pack['name']} → {recipient['nickname']})",
-                    "gift",
-                )
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
+            pack_key = (body.emoticon_id or "").strip()
+            pack_row = conn.execute(
+                "SELECT pack_name, MAX(gift_cost) AS gift_cost FROM emoticons WHERE pack_name = ? GROUP BY pack_name",
+                (pack_key,),
+            ).fetchone()
+            if pack_row:
+                cost = int(pack_row["gift_cost"] if pack_row["gift_cost"] is not None else 1000)
+                title = pack_row["pack_name"]
+            else:
+                pack = next((e for e in GIFT_EMOTICON_PACKS if e["id"] == pack_key), None)
+                if not pack:
+                    raise HTTPException(status_code=400, detail="선물할 이모티콘을 선택해 주세요.")
+                cost = int(pack["cost"])
+                title = pack["name"]
+            if cost > 0:
+                try:
+                    _, new_balance = apply_point_delta(
+                        conn,
+                        session["id"],
+                        -cost,
+                        f"이모티콘 선물 ({title} → {recipient['nickname']})",
+                        "gift",
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+            else:
+                new_balance = session["points"]
 
         conn.execute(
             """
@@ -2947,7 +2981,7 @@ def list_emoticons():
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT id, name, pack_name, glyph, image_url, created_at FROM emoticons ORDER BY pack_name ASC, id ASC"
+            "SELECT id, name, pack_name, glyph, image_url, gift_cost, created_at FROM emoticons ORDER BY pack_name ASC, id ASC"
         ).fetchall()
         return {"emoticons": [dict(r) for r in rows]}
     finally:
@@ -2960,6 +2994,7 @@ def create_emoticon(body: EmoticonCreateBody, staff: dict = Depends(require_admi
     pack_name = clean_text(body.pack_name, 40) or "체온이모티콘(1)"
     glyph = clean_text(body.glyph, 16)
     image_url = (body.image_url or "").strip()
+    gift_cost = max(0, int(body.gift_cost))
     if not name:
         raise HTTPException(status_code=400, detail="이모티콘 이름을 입력하세요.")
     if image_url and not (image_url.startswith("/uploads/") or image_url.startswith("https://") or image_url.startswith("http://")):
@@ -2969,11 +3004,12 @@ def create_emoticon(body: EmoticonCreateBody, staff: dict = Depends(require_admi
     now = utc_now_iso()
     with transaction() as conn:
         cur = conn.execute(
-            "INSERT INTO emoticons (name, pack_name, glyph, image_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (name, pack_name, glyph, image_url, staff["id"], now),
+            "INSERT INTO emoticons (name, pack_name, glyph, image_url, gift_cost, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (name, pack_name, glyph, image_url, gift_cost, staff["id"], now),
         )
+        conn.execute("UPDATE emoticons SET gift_cost = ? WHERE pack_name = ?", (gift_cost, pack_name))
         row = conn.execute(
-            "SELECT id, name, pack_name, glyph, image_url, created_at FROM emoticons WHERE id = ?",
+            "SELECT id, name, pack_name, glyph, image_url, gift_cost, created_at FROM emoticons WHERE id = ?",
             (cur.lastrowid,),
         ).fetchone()
     return {"emoticon": dict(row)}
@@ -2982,6 +3018,7 @@ def create_emoticon(body: EmoticonCreateBody, staff: dict = Depends(require_admi
 @app.post("/api/emoticons/batch", status_code=201)
 def create_emoticons_batch(body: EmoticonBatchBody, staff: dict = Depends(require_admin)):
     pack_name = clean_text(body.pack_name, 40) or "체온이모티콘(1)"
+    gift_cost = max(0, int(body.gift_cost))
     now = utc_now_iso()
     created = []
     with transaction() as conn:
@@ -2994,15 +3031,17 @@ def create_emoticons_batch(body: EmoticonBatchBody, staff: dict = Depends(requir
             if image_url and not (image_url.startswith("/uploads/") or image_url.startswith("https://") or image_url.startswith("http://")):
                 raise HTTPException(status_code=400, detail="유효하지 않은 이미지 경로입니다.")
             cur = conn.execute(
-                "INSERT INTO emoticons (name, pack_name, glyph, image_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (name, pack_name, glyph, image_url, staff["id"], now),
+                "INSERT INTO emoticons (name, pack_name, glyph, image_url, gift_cost, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (name, pack_name, glyph, image_url, gift_cost, staff["id"], now),
             )
             row = conn.execute(
-                "SELECT id, name, pack_name, glyph, image_url, created_at FROM emoticons WHERE id = ?",
+                "SELECT id, name, pack_name, glyph, image_url, gift_cost, created_at FROM emoticons WHERE id = ?",
                 (cur.lastrowid,),
             ).fetchone()
             if row:
                 created.append(dict(row))
+        if created:
+            conn.execute("UPDATE emoticons SET gift_cost = ? WHERE pack_name = ?", (gift_cost, pack_name))
     if not created:
         raise HTTPException(status_code=400, detail="등록할 이모티콘이 없습니다.")
     return {"emoticons": created, "pack_name": pack_name}
