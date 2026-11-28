@@ -651,22 +651,30 @@
     }
     evWrap.appendChild(miniGrid);
 
-    (cal.events || []).slice(0, 3).forEach((ev) => {
-      const evColor = ev.color || "#ec4899";
-      evWrap.appendChild(
-        el("div", { className: "list-item", style: `border-left: 4px solid ${evColor}` }, [
-          el("div", {}, [
-            el("span", {
-              className: "badge-pink",
-              style: `background:${evColor}; color:#fff`,
-              textContent: CAL_CAT_LABELS[ev.category] || ev.category,
-            }),
-            el("strong", { textContent: ` ${ev.title}` }),
-          ]),
-          el("span", { className: "muted small", textContent: `${ev.event_date} ${ev.start_time}` }),
-        ])
-      );
-    });
+    const todayStr = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}-${String(nowDate.getDate()).padStart(2, "0")}`;
+    const upcomingHomeEvents = (cal.events || [])
+      .filter((ev) => (ev.event_date || "") >= todayStr)
+      .sort((a, b) => `${a.event_date} ${a.start_time || ""}`.localeCompare(`${b.event_date} ${b.start_time || ""}`));
+    if (!upcomingHomeEvents.length) {
+      evWrap.appendChild(el("p", { className: "muted small mt-12", textContent: "예정된 방송일정이 없습니다." }));
+    } else {
+      upcomingHomeEvents.slice(0, 3).forEach((ev) => {
+        const evColor = ev.color || "#ec4899";
+        evWrap.appendChild(
+          el("div", { className: "list-item", style: `border-left: 4px solid ${evColor}` }, [
+            el("div", {}, [
+              el("span", {
+                className: "badge-pink",
+                style: `background:${evColor}; color:#fff`,
+                textContent: CAL_CAT_LABELS[ev.category] || ev.category,
+              }),
+              el("strong", { textContent: ` ${ev.title}` }),
+            ]),
+            el("span", { className: "muted small", textContent: `${ev.event_date} ${ev.start_time}` }),
+          ])
+        );
+      });
+    }
 
     const vodWrap = document.getElementById("home-vods");
     clear(vodWrap);
@@ -2087,51 +2095,79 @@
       grid.appendChild(cell);
     }
 
+    const renderCalEventItem = (ev, isPast = false) => {
+      const evColor = ev.color || "#ec4899";
+      const rightBox = el("div", { className: "row-gap" }, [
+        el("span", { className: "muted small", textContent: `${ev.event_date} ${ev.start_time}` }),
+      ]);
+      if (adminMode) {
+        rightBox.appendChild(
+          el("button", {
+            className: "btn btn-outline btn-sm",
+            textContent: "수정",
+            onClick: () => showCalendarEventModal(ev),
+          })
+        );
+        rightBox.appendChild(
+          el("button", {
+            className: "btn btn-danger btn-sm",
+            textContent: "삭제",
+            onClick: async () => {
+              await api(`/api/calendar/${ev.id}`, { method: "DELETE" });
+              showToast("일정이 삭제되었습니다.");
+              loadCalendar();
+            },
+          })
+        );
+      }
+      return el(
+        "div",
+        {
+          className: "list-item",
+          style: `border-left: 5px solid ${evColor}${isPast ? "; opacity: 0.75" : ""}`,
+        },
+        [
+          el("div", {}, [
+            el("span", {
+              className: "badge-pink",
+              style: `background:${evColor}; color:#fff`,
+              textContent: CAL_CAT_LABELS[ev.category] || ev.category,
+            }),
+            el("strong", { textContent: ` ${ev.title}` }),
+            el("div", { className: "muted small", textContent: ev.description }),
+          ]),
+          rightBox,
+        ]
+      );
+    };
+
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const upcomingEvents = events
+      .filter((ev) => (ev.event_date || "") >= todayStr)
+      .sort((a, b) => `${a.event_date} ${a.start_time || ""}`.localeCompare(`${b.event_date} ${b.start_time || ""}`));
+    const pastEvents = events
+      .filter((ev) => (ev.event_date || "") < todayStr)
+      .sort((a, b) => `${b.event_date} ${b.start_time || ""}`.localeCompare(`${a.event_date} ${a.start_time || ""}`));
+
     const listWrap = document.getElementById("cal-event-list");
     clear(listWrap);
-    if (!events.length) {
-      listWrap.appendChild(el("p", { className: "muted", textContent: "이번 달 등록된 일정이 없습니다." }));
+    if (!upcomingEvents.length) {
+      listWrap.appendChild(
+        el("p", {
+          className: "muted",
+          textContent: events.length ? "예정된 일정이 없습니다." : "이번 달 등록된 일정이 없습니다.",
+        })
+      );
     } else {
-      events.forEach((ev) => {
-        const evColor = ev.color || "#ec4899";
-        const rightBox = el("div", { className: "row-gap" }, [
-          el("span", { className: "muted small", textContent: `${ev.event_date} ${ev.start_time}` }),
-        ]);
-        if (adminMode) {
-          rightBox.appendChild(
-            el("button", {
-              className: "btn btn-outline btn-sm",
-              textContent: "수정",
-              onClick: () => showCalendarEventModal(ev),
-            })
-          );
-          rightBox.appendChild(
-            el("button", {
-              className: "btn btn-danger btn-sm",
-              textContent: "삭제",
-              onClick: async () => {
-                await api(`/api/calendar/${ev.id}`, { method: "DELETE" });
-                showToast("일정이 삭제되었습니다.");
-                loadCalendar();
-              },
-            })
-          );
-        }
-        listWrap.appendChild(
-          el("div", { className: "list-item", style: `border-left: 5px solid ${evColor}` }, [
-            el("div", {}, [
-              el("span", {
-                className: "badge-pink",
-                style: `background:${evColor}; color:#fff`,
-                textContent: CAL_CAT_LABELS[ev.category] || ev.category,
-              }),
-              el("strong", { textContent: ` ${ev.title}` }),
-              el("div", { className: "muted small", textContent: ev.description }),
-            ]),
-            rightBox,
-          ])
-        );
-      });
+      upcomingEvents.forEach((ev) => listWrap.appendChild(renderCalEventItem(ev, false)));
+    }
+
+    const pastCard = document.getElementById("cal-past-card");
+    const pastWrap = document.getElementById("cal-past-list");
+    if (pastCard && pastWrap) {
+      clear(pastWrap);
+      pastCard.classList.toggle("hidden", !pastEvents.length);
+      pastEvents.forEach((ev) => pastWrap.appendChild(renderCalEventItem(ev, true)));
     }
   }
 
